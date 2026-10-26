@@ -1,0 +1,22 @@
+{
+  "name": "my_parcel",
+  "epsg": "EPSG:26913",
+  "local_origin_xy": [500000.0, 4000000.0],
+  "raster_bbox": [499800.0, 3999800.0, 500200.0, 4000200.0],
+  "context_bbox": [496000.0, 3996000.0, 504000.0, 4004000.0],
+  "parcel_layer_url": "https://gis.example.com/arcgis/rest/services/Parcels/MapServer/0",
+  "parcel_id_field": "APN",
+  "parcel_id": "000-00-000",
+  "context_vector_buffer_m": 200,
+  "dem_px_m": 1.0,
+  "aerial_px_m": 0.25,
+  "context_dem_px_m": 10.0,
+  "context_aerial_px_m": 4.0,
+  "dem": "gis/terrain_dem.tif",
+  "aerial": "gis/aerial_naip.tif",
+  "context_dem": "gis/context_dem_10m.tif",
+  "context_aerial": "gis/context_aerial_naip_4m.tif",
+  "parcel": "gis/parcel_boundary.geojson",
+  "context_parcels": "gis/context_parcels.geojson",
+  "roads": "gis/roads.geojson"
+}
