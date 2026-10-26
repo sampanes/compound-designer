@@ -17,7 +17,7 @@ Goal: a few accurately sized hypothetical houses on a real parcel with real terr
 | Navigable views, including eye level | Done (top, oblique, eye-level cameras; 1.8 m person for scale) |
 | A saved, editable Blender project | Done (`site_master.blend` + one `.blend` per design) |
 | At least one attractive overview render | Basic renders work; materials and vegetation pass not done |
-| A documented, repeatable import workflow | Done (README; every step prints `[CHECK]` lines) |
+| A documented, repeatable import workflow | Done (README; both Blender steps print `[CHECK]` lines) |
 
 Not required for milestone 1: detailed interiors, automatic layouts, Godot.
 
@@ -45,7 +45,9 @@ origin, so numbers stay small enough for float32. Never rescale the property.
 
 `build_site.py` makes `site_master.blend` from the Phase 2 files: terrain, aerial texture,
 boundary, neighbor lines, roads, optional context terrain, a scale figure, and cameras. It checks
-that the boundary area and extent in Blender match the source data.
+the rasters' georeference against `raster_bbox`, all four terrain edges, and the area and position
+of the boundary curve against the source polygon (details in
+[data-prep.md](data-prep.md#checking-the-result)).
 
 Validate a few key distances in Blender against the GIS (for example, frontage length or the
 distance from a corner to the road).
@@ -57,8 +59,9 @@ heights; rotations and spacing; courtyard size; paths and driveways; shared vers
 outdoor space; separation, privacy, and orientation.
 
 `place_masses.py` reads a design JSON, places each mass on a pad graded into the terrain, renders,
-and writes per-building stats (floor elevation, uphill cut, exposed downhill foundation, boundary
-clearance, coverage). Each design is its own `.blend`; the site file is never modified.
+and writes per-element stats (floor elevation, uphill cut, exposed downhill foundation, true
+clearance to the boundary) plus overall building coverage. It also checks that each built mass has
+the requested footprint and lies fully inside the parcel, including on irregular (concave) lots. Each design is its own `.blend`; the site file is never modified.
 
 Possible next steps here (use existing Blender features before writing code):
 - Driveway and path curves with length and grade readouts.

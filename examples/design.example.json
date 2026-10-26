@@ -1,15 +1,15 @@
 {
-  "name": "compound_v1",
-  "note": "3 single-story houses around a shared courtyard that opens away from the road",
+  "name": "example_layout",
+  "note": "Placeholder layout: a main house, a guest cottage, and a studio around a small terrace. Edit freely.",
   "frame": {
     "u_bearing_deg": 90.0,
     "comment": "u = along the road (compass bearing above), v = into the lot. meters."
   },
-  "floor_mode": "balanced",
+  "floor_mode": "uphill",
   "elements": [
-    {"id": "house_A", "kind": "house", "u": 35.0, "v": 15.0, "w_ft": 50, "d_ft": 40, "rot_deg": 0, "wall_h": 3.0, "roof_pitch": 0.3333},
-    {"id": "house_B", "kind": "house", "u": 15.0, "v": 32.0, "w_ft": 50, "d_ft": 40, "rot_deg": 0, "wall_h": 3.0, "roof_pitch": 0.3333},
-    {"id": "house_C", "kind": "house", "u": 55.0, "v": 32.0, "w_ft": 50, "d_ft": 40, "rot_deg": 0, "wall_h": 3.0, "roof_pitch": 0.3333},
-    {"id": "courtyard", "kind": "terrace", "u": 35.0, "v": 32.0, "w_m": 16.0, "d_m": 12.0, "rot_deg": 0}
+    {"id": "main_house", "kind": "house", "u": 30.0, "v": 14.0, "w_ft": 60, "d_ft": 32, "rot_deg": 0, "wall_h": 2.8, "roof_pitch": 0.5},
+    {"id": "guest_cottage", "kind": "house", "u": 12.0, "v": 34.0, "w_ft": 30, "d_ft": 24, "rot_deg": 15, "wall_h": 2.7, "roof_pitch": 0.25},
+    {"id": "studio", "kind": "house", "u": 46.0, "v": 36.0, "w_ft": 24, "d_ft": 20, "rot_deg": -10, "wall_h": 3.4, "roof_pitch": 0.1},
+    {"id": "terrace", "kind": "terrace", "u": 29.0, "v": 33.0, "w_m": 10.0, "d_m": 8.0, "rot_deg": 0}
   ]
 }

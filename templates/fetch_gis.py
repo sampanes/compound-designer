@@ -45,8 +45,13 @@ def vector(url, where, bbox, fields, dest):
 
 
 def raster(url, bbox, px_m, dest, extra):
-    w = int(round((bbox[2] - bbox[0]) / px_m))
-    h = int(round((bbox[3] - bbox[1]) / px_m))
+    w = (bbox[2] - bbox[0]) / px_m
+    h = (bbox[3] - bbox[1]) / px_m
+    if abs(w - round(w)) > 1e-6 or abs(h - round(h)) > 1e-6:
+        # otherwise the service stretches pixels to fit and the grid no longer lands on whole pixels
+        raise SystemExit("[X] %s: bbox %.2f x %.2f m is not a whole number of %g m pixels; widen the bbox"
+                         % (dest, bbox[2] - bbox[0], bbox[3] - bbox[1], px_m))
+    w, h = int(round(w)), int(round(h))
     params = {"bbox": "%.6f,%.6f,%.6f,%.6f" % tuple(bbox), "bboxSR": WKID, "imageSR": WKID,
               "size": "%d,%d" % (w, h), "format": "tiff", "f": "image"}
     params.update(extra)

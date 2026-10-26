@@ -6,8 +6,9 @@ would actually stand.
 
 A sketchbook for "what could fit on this lot?", not survey, engineering, or permit work.
 
-Everything is plain scripts: a stdlib-Python downloader and two headless Blender scripts. Each
-step prints `[CHECK] OK/FAIL` lines and exits non-zero on failure, so the pipeline is easy to
+Everything is plain scripts: a stdlib-Python downloader and two headless Blender scripts. The
+downloader prints `[OK]`/`[SKIP]` per file and stops on a service error; the two Blender scripts
+print `[CHECK] OK/FAIL` lines and exit non-zero if any check fails, so the pipeline is easy to
 re-run after you edit a config.
 
 ## Docs
@@ -25,8 +26,8 @@ re-run after you edit a config.
 - `exports/site_stats.json`: area, elevation range, slope (1 m and 5 m smoothed), best-fit grade
   and which way the lot faces.
 - For each layout `design_*.json`: a separate `.blend` with the building masses on a graded copy
-  of the terrain (pads cut to floor level), renders, and per-building stats (floor elevation,
-  uphill cut, exposed foundation downhill, clearance to the boundary, coverage).
+  of the terrain (pads cut to floor level), renders, per-element stats (floor elevation,
+  uphill cut, exposed foundation downhill, clearance to the boundary), and overall building coverage.
 
 ## Requirements
 - Blender 5.1+ (it may work on older versions; untested) with the
@@ -63,7 +64,7 @@ want history for them, make `parcels/` its own local repo.
 | `parcel_layer_url` | ArcGIS REST layer URL ending in `/MapServer/<n>` or `/FeatureServer/<n>`. County GIS sites or state aggregators usually have one. |
 | `parcel_id_field`, `parcel_id` | field name and value that select your parcel (often an APN). |
 | `parcel_out_fields`, `context_out_fields` | attributes to download. **Defaults to the ID field only**, so owner names never land on disk unless you ask for them. |
-| `dem_px_m`, `aerial_px_m`, `context_*_px_m` | resolutions (defaults: 1, 0.25, 10, 4 m). |
+| `dem_px_m`, `aerial_px_m`, `context_*_px_m` | resolutions (defaults: 1, 0.25, 10, 4 m). Each bbox's width and height must be a whole number of its pixel size, or `fetch_gis.py` stops. |
 | `dem`, `aerial`, `parcel`, ... | output file paths inside the parcel folder. |
 
 Tips:

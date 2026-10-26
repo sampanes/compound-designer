@@ -16,6 +16,7 @@ RENDER = "--no-render" not in argv
 cfg = json.load(open(os.path.join(PDIR, "parcel.json")))
 OX, OY = cfg["local_origin_xy"]
 BX0, BY0, BX1, BY1 = cfg["raster_bbox"]
+PX = float(cfg.get("dem_px_m", 1.0))  # DEM pixel size in meters (fetch_gis.py requests this size)
 failed = []
 
 def check(name, ok, detail=""):
@@ -26,17 +27,35 @@ def check(name, ok, detail=""):
 def p(rel):
     return os.path.join(PDIR, rel)
 
+for sub in ("blender", "exports", "renders"):
+    os.makedirs(p(sub), exist_ok=True)
+
 # --- fresh scene, BlenderGIS georef ---------------------------------------------------------
 for ob in list(bpy.data.objects):
     bpy.data.objects.remove(ob, do_unlink=True)
 addon_utils.enable("BlenderGIS", default_set=True)
 from BlenderGIS.geoscene import GeoScene
+from BlenderGIS.core.georaster import GeoRaster
 scn = bpy.context.scene
 scn.unit_settings.system = "METRIC"
 geoscn = GeoScene(scn)
 geoscn.crs = cfg["epsg"]
 geoscn.setOriginPrj(OX, OY, synch=False)
 check("scene georef", geoscn.isGeoref, "%s origin=(%.1f, %.1f)" % (geoscn.crs, OX, OY))
+
+# --- input rasters: georeferenced extent and pixel size must match parcel.json ----------------
+def raster_matches(name, path, px):
+    r = GeoRaster(path)
+    bb = r.bbox
+    tol = px / 2
+    ok = (abs(bb.xmin - BX0) < tol and abs(bb.xmax - BX1) < tol and
+          abs(bb.ymin - BY0) < tol and abs(bb.ymax - BY1) < tol and abs(abs(r.pxSize.x) - px) < 1e-3 * px)
+    check(name + " georef matches raster_bbox", ok, "bbox %.2f %.2f %.2f %.2f px %.3f m, %dx%d" % (
+        bb.xmin, bb.ymin, bb.xmax, bb.ymax, abs(r.pxSize.x), r.size.x, r.size.y))
+    return r
+
+dem_r = raster_matches("DEM", p(cfg["dem"]), PX)
+raster_matches("aerial", p(cfg["aerial"]), float(cfg.get("aerial_px_m", 0.25)))
 
 # --- terrain: DEM as real mesh (1 vertex per DEM pixel center) -----------------------------
 bpy.ops.importgis.georaster(filepath=p(cfg["dem"]), importMode="DEM_RAW", step=1, buildFaces=True)
@@ -47,8 +66,11 @@ co = np.empty(len(me.vertices) * 3)
 me.vertices.foreach_get("co", co)
 co = co.reshape(-1, 3)
 check("terrain origin offset", abs(geoscn.crsx - OX) < 1e-6 and abs(geoscn.crsy - OY) < 1e-6)
-check("terrain extent",
-      abs(co[:, 0].min() + OX - (BX0 + 0.5)) < 0.01 and abs(co[:, 1].max() + OY - (BY1 - 0.5)) < 0.01,
+# vertices sit at pixel centers: half a pixel in from each edge of raster_bbox, one per DEM pixel
+NX, NY = int(round((BX1 - BX0) / PX)), int(round((BY1 - BY0) / PX))
+edges_ok = (abs(co[:, 0].min() + OX - (BX0 + PX / 2)) < 0.01 and abs(co[:, 0].max() + OX - (BX1 - PX / 2)) < 0.01 and
+            abs(co[:, 1].min() + OY - (BY0 + PX / 2)) < 0.01 and abs(co[:, 1].max() + OY - (BY1 - PX / 2)) < 0.01)
+check("terrain extent (4 edges, %dx%d verts)" % (NX, NY), edges_ok and len(co) == NX * NY,
       "x %.2f..%.2f y %.2f..%.2f z %.2f..%.2f (local)" % (co[:, 0].min(), co[:, 0].max(),
                                                          co[:, 1].min(), co[:, 1].max(),
                                                          co[:, 2].min(), co[:, 2].max()))
@@ -147,12 +169,28 @@ tring = rings(target["geometry"])[0]
 parcel_ob = curve_obj("parcel_boundary", [tring], 0.30, make_mat("parcel_red", (0.9, 0.05, 0.02, 1), emit=2.0),
                       0.3, closed=True, coll=site)
 
-# Planar area/perimeter in Blender local coords vs the source GeoJSON (should match to mm)
+# The boundary curve actually built in Blender vs the source GeoJSON: same area, and its centroid
+# plus the local origin lands on the source centroid (catches origin/offset mistakes). Should match to mm.
+def area_centroid(pts):
+    pts = list(pts) + [pts[0]] if pts[0] != pts[-1] else list(pts)
+    a = cx = cy = 0.0
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+        c = x1 * y2 - x2 * y1
+        a += c
+        cx += (x1 + x2) * c
+        cy += (y1 + y2) * c
+    return abs(a) / 2, cx / (3 * a), cy / (3 * a)
+
 loc = to_local(tring)
-area_bl = 0.5 * abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(loc, loc[1:])))
-area_src = 0.5 * abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(tring, tring[1:])))
+curve_xy = [(pt.co.x, pt.co.y) for pt in parcel_ob.data.splines[0].points]
+area_bl, ccx_bl, ccy_bl = area_centroid(curve_xy)
+# source centroid computed near a vertex of the ring itself (raw UTM-sized products lose precision)
+X0, Y0 = tring[0][0], tring[0][1]
+area_src, ccx_src, ccy_src = area_centroid([(q[0] - X0, q[1] - Y0) for q in tring])
+off = math.hypot(ccx_bl + OX - (ccx_src + X0), ccy_bl + OY - (ccy_src + Y0))
 check("parcel area matches source", abs(area_bl - area_src) < 0.01,
       "%.1f m2 = %.4f acres" % (area_bl, area_bl / 4046.8564))
+check("parcel position matches source", off < 0.01, "centroid offset %.4f m" % off)
 
 ctx = json.load(open(p(cfg["context_parcels"])))
 ID_FIELD = cfg.get("parcel_id_field", "APN")
@@ -210,26 +248,25 @@ def inside(px, py, poly):
 
 mask = inside(co[:, 0], co[:, 1], loc)
 zin = co[mask, 2]
-# DEM grid slope (1 m pixels) from the raw vertex grid
-nx = int(round(BX1 - BX0))
-grid = co[:, 2].reshape(-1, nx) if len(co) % nx == 0 else None
+# DEM grid slope from the raw vertex grid (PX m pixels)
+grid = co[:, 2].reshape(-1, NX) if len(co) == NX * NY else None
 stats = {"dem_pixels_in_parcel": int(mask.sum())}
 if len(zin):
     stats.update(z_min=round(float(zin.min()), 2), z_max=round(float(zin.max()), 2),
                  relief_m=round(float(zin.max() - zin.min()), 2))
 if grid is not None:
-    gy, gx = np.gradient(grid)
+    gy, gx = np.gradient(grid, PX)
     slope = np.degrees(np.arctan(np.hypot(gx, gy))).ravel()
     s_in = slope[mask]
-    stats.update(slope1m_deg_median=round(float(np.median(s_in)), 1),
-                 slope1m_deg_p90=round(float(np.percentile(s_in, 90)), 1))
-    # 5 m box-smoothed surface: closer to what a building pad / driveway "feels"
-    k = 5
+    stats.update(dem_px_m=PX, slope_deg_median=round(float(np.median(s_in)), 1),
+                 slope_deg_p90=round(float(np.percentile(s_in, 90)), 1))
+    # ~5 m box-smoothed surface: closer to what a building pad / driveway "feels"
+    k = max(1, int(round(5.0 / PX))) | 1  # odd kernel width in pixels
     pad = np.pad(grid, k // 2, mode="edge")
     cs = pad.cumsum(0).cumsum(1)
     cs = np.pad(cs, ((1, 0), (1, 0)))
     sm = (cs[k:, k:] - cs[:-k, k:] - cs[k:, :-k] + cs[:-k, :-k]) / (k * k)
-    gy5, gx5 = np.gradient(sm)
+    gy5, gx5 = np.gradient(sm, PX)
     s5 = np.degrees(np.arctan(np.hypot(gx5, gy5))).ravel()[mask]
     grade5 = np.tan(np.radians(s5)) * 100
     stats.update(slope5m_deg_median=round(float(np.median(s5)), 1),

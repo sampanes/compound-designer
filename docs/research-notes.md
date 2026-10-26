@@ -94,5 +94,7 @@ Rules of thumb from massing houses on a hillside lot (numbers below are illustra
 - Each mass is one object (walls + roof + a deep foundation that the terrain hides), with its
   origin at floor level. You can move it by hand, but the terrain grading follows the JSON, so
   copy positions back into the JSON and re-run to re-grade.
-- `fetch_gis.py` re-downloads were byte-identical to the originals, so the GIS inputs are
-  reproducible from `parcel.json` alone and don't need to be kept in version control.
+- In one test (2026-10), a `fetch_gis.py` re-download a few hours later was byte-identical to the
+  original. That's why the GIS inputs aren't kept in version control. But the services can
+  change (new lidar, new NAIP year, edited parcel lines), so record fetch dates, and keep a
+  copy of any input a design depends on.

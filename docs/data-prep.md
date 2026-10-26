@@ -66,7 +66,14 @@ you have.
 
 ## Checking the result
 
-`build_site.py` prints `[CHECK]` lines for the georef origin, terrain extent, and boundary area
-against the source polygon, and exits 1 if anything is off. If a check fails, the usual causes
+`build_site.py` prints `[CHECK]` lines and exits 1 if anything is off. It checks that:
+- the DEM's and the aerial's own georeference (GeoTIFF tags) match `raster_bbox` and the
+  configured pixel sizes;
+- the terrain mesh has one vertex per DEM pixel and its four edges sit where `raster_bbox` says;
+- the parcel boundary curve built in Blender has the source polygon's area and sits at the
+  source polygon's position.
+
+It does not check that the parcel, roads, and rasters really share a CRS beyond those extents,
+so keep the CRS rule above. If a check fails, the usual causes
 are a CRS mismatch between layers, a DEM in feet, or a DEM and aerial exported over different
 extents.

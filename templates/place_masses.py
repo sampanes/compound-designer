@@ -29,6 +29,9 @@ def check(name, ok, detail=""):
 def p(rel):
     return os.path.join(PDIR, rel)
 
+for sub in ("exports", "renders"):
+    os.makedirs(p(sub), exist_ok=True)
+
 bpy.ops.wm.open_mainfile(filepath=p("blender/site_master.blend"))
 scn = bpy.context.scene
 terrain = bpy.data.objects["terrain"]
@@ -68,6 +71,22 @@ def seg_dist(pt, a, b):
     L = dx * dx + dy * dy
     t = 0 if L == 0 else max(0, min(1, ((px - ax) * dx + (py - ay) * dy) / L))
     return math.hypot(ax + t * dx - px, ay + t * dy - py)
+
+def segs_cross(a, b, c, d):
+    def orient(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    return (orient(a, b, c) > 0) != (orient(a, b, d) > 0) and (orient(c, d, a) > 0) != (orient(c, d, b) > 0)
+
+def footprint_vs_parcel(corners, ring):
+    """(fully inside, min clearance m). Inside = every corner inside and no edge crosses the boundary,
+    so concave lots are handled. Clearance = true distance between the two outlines."""
+    fp = list(corners) + [corners[0]]
+    fsegs, psegs = list(zip(fp, fp[1:])), list(zip(ring, ring[1:]))
+    crosses = any(segs_cross(a, b, c, d) for a, b in fsegs for c, d in psegs)
+    ins = not crosses and all(inside(x, y, ring) for x, y in corners)
+    clear = 0.0 if crosses else min(min(seg_dist(c, a, b) for c in corners for a, b in psegs),
+                                    min(seg_dist(q, a, b) for q in ring[:-1] for a, b in fsegs))
+    return ins, clear
 
 def mat(name, color, rough=0.8):
     m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
@@ -141,16 +160,24 @@ for el in design["elements"]:
     ob.location = (cx, cy, floor)
     ob.rotation_euler = (0, 0, rot)
 
-    ins = all(inside(x, y, loc_ring) for x, y in corners)
-    clear = min(seg_dist(c, a, b) for c in corners for a, b in zip(loc_ring, loc_ring[1:]))
+    # measure the footprint of the mesh actually built (walls / terrace top = material 0), in world XY
+    vids = {i for poly in me.polygons if poly.material_index == 0 for i in poly.vertices}
+    local = [me.vertices[i].co for i in vids]
+    w_built = max(q.x for q in local) - min(q.x for q in local)
+    d_built = max(q.y for q in local) - min(q.y for q in local)
+    built_corners = [tuple((ob.matrix_basis @ q).xy) for q in local]
+    match = all(min(math.dist(c, q) for q in built_corners) < 0.001 for c in corners)
+    check("%s built footprint %.2f x %.2f m (%d sq ft)" % (el["id"], w_built, d_built,
+                                                           round(w_built * d_built / FT / FT)),
+          abs(w_built - w) < 0.001 and abs(d_built - d) < 0.001 and match)
+
+    ins, clear = footprint_vs_parcel(corners, loc_ring)
     info = dict(footprint_m2=round(w * d, 1), footprint_sqft=round(w * d / FT / FT),
                 floor_z=round(floor, 2), ground_z_range=[round(zmin, 2), round(zmax, 2)],
                 cut_depth_uphill_m=round(zmax - floor, 2), exposed_foundation_downhill_m=round(floor - zmin, 2),
                 min_clearance_to_boundary_m=round(clear, 1))
     stats["elements"][el["id"]] = info
     check("%s inside parcel" % el["id"], ins, json.dumps(info))
-    if el["kind"] == "house":
-        check("%s is 2000 sq ft" % el["id"], abs(w * d / FT / FT - el["w_ft"] * el["d_ft"]) < 0.5)
 
 # --- graded terrain: copy of the terrain with each pad cut down to its floor (fill side untouched,
 # so foundations show on the downhill side). Follows the design JSON, not hand-moved objects.
