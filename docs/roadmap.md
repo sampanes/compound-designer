@@ -21,6 +21,16 @@ Goal: a few accurately sized hypothetical houses on a real parcel with real terr
 
 Not required for milestone 1: detailed interiors, automatic layouts, Godot.
 
+**Next:** the materials and vegetation pass for one attractive overview render (the only open row
+above), then Phase 4's driveway and path curves with length and grade readouts.
+
+### Verified runs
+
+| What | When | Versions |
+| --- | --- | --- |
+| `build_site.py` and `place_masses.py` on one real parcel, headless, no GDAL | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f` (see [research-notes.md](research-notes.md#blendergis-on-blender-51)) |
+| Fresh folder from the README Quick start, end to end | not yet recorded | add the date, Blender and BlenderGIS versions after the first clean run |
+
 ## Phase 1 -- Identify a real parcel
 
 Capture the listing URL, parcel ID (APN), jurisdiction, acreage, boundary, topography, access,
@@ -36,7 +46,8 @@ One consistent set of site data in one projected CRS with meter units:
   the detail DEM, several km at low resolution for horizons).
 - Aerial imagery over the same bbox as the DEM, where licensing permits.
 - Roads, streams, and constraints as vectors.
-- A notes file recording CRS, vertical datum, units, and sources with fetch dates.
+- A notes file recording CRS, vertical datum, units, and sources with fetch dates. Start from
+  [`examples/notes.example.md`](../examples/notes.example.md).
 
 Pick a round local modeling origin near the parcel. Blender coordinates are CRS minus that
 origin, so numbers stay small enough for float32. Never rescale the property.
@@ -60,7 +71,7 @@ outdoor space; separation, privacy, and orientation.
 
 `place_masses.py` reads a design JSON, places each mass on a pad graded into the terrain, renders,
 and writes per-element stats (floor elevation, uphill cut, exposed downhill foundation, true
-clearance to the boundary) plus overall building coverage. It also checks that each built mass has
+clearance to the boundary, which `floor_mode` was used) plus overall building coverage. It also checks that each built mass has
 the requested footprint and lies fully inside the parcel, including on irregular (concave) lots. Each design is its own `.blend`; the site file is never modified.
 
 Possible next steps here (use existing Blender features before writing code):

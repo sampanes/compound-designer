@@ -1,7 +1,10 @@
 # Download a parcel's GIS inputs (parcel + neighbors + roads + DEM + aerial + context terrain) from public
 # REST services, driven by PARCEL_DIR/parcel.json. Plain Python 3 stdlib, no Blender needed.
 # Usage: python fetch_gis.py PARCEL_DIR [--force] [--out DIR]
-#   --force  re-download files that already exist     --out  write into DIR instead of PARCEL_DIR/gis
+#   --force  re-download files that already exist
+#   --out    resolve the output paths in parcel.json under DIR instead of PARCEL_DIR (a side copy; the
+#            Blender steps always read from PARCEL_DIR)
+# Each file lands at the path parcel.json names for it (default gis/...), relative to PARCEL_DIR.
 # Sources: any ArcGIS REST parcel layer (parcel_layer_url), Census TIGERweb local roads, USGS 3DEP elevation,
 # USGS NAIPPlus imagery. All fetched in the parcel's projected CRS so nothing is reprojected later.
 import json, os, sys, urllib.parse, urllib.request
@@ -9,18 +12,21 @@ import json, os, sys, urllib.parse, urllib.request
 TIGER_ROADS = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation/MapServer/8/query"
 DEM_SVC = "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage"
 NAIP_SVC = "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage"
+USAGE = "usage: python fetch_gis.py PARCEL_DIR [--force] [--out DIR]"
 
 args = sys.argv[1:]
+if not args or args[0].startswith("-"):  # no parcel dir, -h, --help, or flags before the parcel dir
+    print(USAGE, file=sys.stderr)
+    sys.exit(2)
 PDIR = os.path.abspath(args[0])
 FORCE = "--force" in args
-OUT = os.path.abspath(args[args.index("--out") + 1]) if "--out" in args else os.path.join(PDIR, "gis")
+OUT = os.path.abspath(args[args.index("--out") + 1]) if "--out" in args else PDIR
 cfg = json.load(open(os.path.join(PDIR, "parcel.json")))
 WKID = cfg["epsg"].split(":")[1]
-os.makedirs(OUT, exist_ok=True)
 
 
 def get(url, params, dest):
-    path = os.path.join(OUT, os.path.basename(dest))
+    path = os.path.join(OUT, dest)
     if os.path.exists(path) and not FORCE:
         print("[SKIP] %s (exists)" % path)
         return path
@@ -30,6 +36,7 @@ def get(url, params, dest):
         data = r.read()
     if data[:1] == b"{" and b'"error"' in data[:200]:
         raise SystemExit("[X] service error for %s: %s" % (dest, data[:300]))
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "wb") as f:
         f.write(data)
     print("[OK] %s (%d bytes)" % (path, len(data)))
@@ -58,12 +65,29 @@ def raster(url, bbox, px_m, dest, extra):
     return get(url, params, dest)
 
 
+def outer_ring(geom):
+    # Outer ring of the largest polygon: a parcel split by a road arrives as a MultiPolygon.
+    if geom["type"] == "Polygon":
+        polys = [geom["coordinates"]]
+    elif geom["type"] == "MultiPolygon":
+        polys = geom["coordinates"]
+    else:
+        raise SystemExit("[X] parcel geometry is %s, expected Polygon or MultiPolygon" % geom["type"])
+    area = lambda ring: abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(ring, ring[1:]))) / 2
+    return max((poly[0] for poly in polys), key=area)
+
+
 # 1) target parcel, by its ID field. Attribute lists default to the ID field only, so owner names and
 #    other personal fields are never downloaded unless you list them explicitly.
 ID_FIELD = cfg.get("parcel_id_field", "APN")
-ppath = vector(cfg["parcel_layer_url"] + "/query", "%s='%s'" % (ID_FIELD, cfg["parcel_id"]), None,
-               cfg.get("parcel_out_fields", ID_FIELD), cfg["parcel"])
-ring = json.load(open(ppath))["features"][0]["geometry"]["coordinates"][0]
+where = "%s='%s'" % (ID_FIELD, cfg["parcel_id"])
+ppath = vector(cfg["parcel_layer_url"] + "/query", where, None, cfg.get("parcel_out_fields", ID_FIELD),
+               cfg["parcel"])
+feats = json.load(open(ppath))["features"]
+if not feats:
+    raise SystemExit("[X] no parcel matched %s on %s; check parcel_id_field / parcel_id, then re-run with --force"
+                     % (where, cfg["parcel_layer_url"]))
+ring = outer_ring(feats[0]["geometry"])
 xs, ys = [q[0] for q in ring], [q[1] for q in ring]
 pad = cfg.get("context_vector_buffer_m", 200)
 vbox = (min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad)

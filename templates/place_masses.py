@@ -26,6 +26,23 @@ def check(name, ok, detail=""):
     if not ok:
         failed.append(name)
 
+def fatal(name, detail=""):
+    # a failed check after which nothing further can be computed
+    check(name, False, detail)
+    print("[DONE] %d check(s) failed: %s" % (len(failed), failed))
+    sys.exit(1)
+
+def outer_ring(geom):
+    # Outer ring of the largest polygon: a parcel split by a road arrives as a MultiPolygon.
+    if geom["type"] == "Polygon":
+        polys = [geom["coordinates"]]
+    elif geom["type"] == "MultiPolygon":
+        polys = geom["coordinates"]
+    else:
+        fatal("parcel geometry", "%s, expected Polygon or MultiPolygon" % geom["type"])
+    area = lambda ring: abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(ring, ring[1:]))) / 2
+    return max((poly[0] for poly in polys), key=area)
+
 def p(rel):
     return os.path.join(PDIR, rel)
 
@@ -42,7 +59,7 @@ def ground(x, y):
     return hit[0].z if hit[0] else None
 
 # --- parcel frame: origin = front corner with the smallest u, u along the road, v into the lot ---
-ring = json.load(open(p(cfg["parcel"])))["features"][0]["geometry"]["coordinates"][0]
+ring = outer_ring(json.load(open(p(cfg["parcel"])))["features"][0]["geometry"])
 loc_ring = [(x - OX, y - OY) for x, y in ring]
 ub = math.radians(design["frame"]["u_bearing_deg"])
 U = Vector((math.sin(ub), math.cos(ub)))           # bearing -> (east, north)
@@ -120,6 +137,10 @@ for ob in list(coll.objects):
     bpy.data.objects.remove(ob, do_unlink=True)
 
 stats = {"design": design["name"], "floor_mode": design["floor_mode"], "elements": {}}
+ids = [e["id"] for e in design["elements"]]
+dupes = sorted({i for i in ids if ids.count(i) > 1})
+if dupes:  # objects, meshes and stats are all keyed by id
+    fatal("element ids unique", "duplicates: %s" % dupes)
 footprints = {}
 for el in design["elements"]:
     if el["kind"] == "house":
@@ -136,8 +157,13 @@ for el in design["elements"]:
     zs = [ground(*(Vector((cx, cy)) + R @ Vector((gx, gy))))
           for gx in np.arange(-w / 2, w / 2 + 0.01, 1.0) for gy in np.arange(-d / 2, d / 2 + 0.01, 1.0)]
     zs = [z for z in zs if z is not None]
+    if not zs:
+        fatal("%s footprint on terrain" % el["id"], "no DEM under the footprint; check u/v against raster_bbox")
     zmin, zmax = min(zs), max(zs)
-    floor = {"balanced": float(np.mean(zs)), "uphill": zmax}[design["floor_mode"]]
+    mode = el.get("floor_mode", design["floor_mode"])
+    if mode not in ("balanced", "uphill"):
+        fatal("%s floor_mode" % el["id"], "%r, expected balanced or uphill" % mode)
+    floor = {"balanced": float(np.mean(zs)), "uphill": zmax}[mode]
 
     me = bpy.data.meshes.new(el["id"])
     bm = bmesh.new()
@@ -172,7 +198,7 @@ for el in design["elements"]:
           abs(w_built - w) < 0.001 and abs(d_built - d) < 0.001 and match)
 
     ins, clear = footprint_vs_parcel(corners, loc_ring)
-    info = dict(footprint_m2=round(w * d, 1), footprint_sqft=round(w * d / FT / FT),
+    info = dict(footprint_m2=round(w * d, 1), footprint_sqft=round(w * d / FT / FT), floor_mode=mode,
                 floor_z=round(floor, 2), ground_z_range=[round(zmin, 2), round(zmax, 2)],
                 cut_depth_uphill_m=round(zmax - floor, 2), exposed_foundation_downhill_m=round(floor - zmin, 2),
                 min_clearance_to_boundary_m=round(clear, 1))
@@ -215,7 +241,6 @@ def overlap(a, b):
             if max(pa) < min(pb) or max(pb) < min(pa):
                 return False
     return True
-ids = list(footprints)
 clash = [(a, b) for i, a in enumerate(ids) for b in ids[i + 1:] if overlap(footprints[a], footprints[b])]
 check("no footprint overlaps", not clash, str(clash))
 parcel_area = 0.5 * abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(loc_ring, loc_ring[1:])))
@@ -237,9 +262,21 @@ def add_cam(name, loc3, look_at, lens=35):
     ob.rotation_euler = (Vector(look_at) - Vector(loc3)).to_track_quat("-Z", "Y").to_euler()
     return ob
 
+def use_eevee(scn):
+    # Blender 5.0 renamed the engine identifier from BLENDER_EEVEE_NEXT back to BLENDER_EEVEE.
+    for eng in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
+        try:
+            scn.render.engine = eng
+            return eng
+        except TypeError:
+            pass
+    fatal("render engine", "no EEVEE engine in this Blender")
+
 els = design["elements"]
 mid = Vector(uv_to_xy(sum(e["u"] for e in els) / len(els), sum(e["v"] for e in els) / len(els)))
 mz = ground(*mid)
+if mz is None:  # layout center off the DEM: use the mean floor elevation instead
+    mz = sum(bpy.data.objects[e["id"]].location.z for e in els) / len(els)
 cams = {
     # from downhill and off to one side, elevated, looking back up at the whole layout
     "overview": add_cam("cam_overview", (*(mid + V * 85 - U * 45), mz + 35), (*mid, mz + 2), lens=35),
@@ -255,9 +292,9 @@ house = next((e for e in els if e["kind"] == "house"), None)
 if house:
     # standing at the road frontage (v = 1 m) in line with the first house, looking down at it
     eye = Vector(uv_to_xy(house["u"], 1))
-    cams["from_road"] = add_cam("cam_from_road", (*eye, ground(*eye) + 1.7),
-                                (*Vector(uv_to_xy(house["u"], house["v"])),
-                                 bpy.data.objects[house["id"]].location.z + 3), lens=24)
+    ez, hz = ground(*eye), bpy.data.objects[house["id"]].location.z
+    cams["from_road"] = add_cam("cam_from_road", (*eye, (hz if ez is None else ez) + 1.7),
+                                (*Vector(uv_to_xy(house["u"], house["v"])), hz + 3), lens=24)
 EYE_SHOTS = {"courtyard_eye", "from_road"}
 OVERLAYS = [bpy.data.objects[n] for n in ("parcel_boundary", "neighbor_parcels", "road_centerlines")
             if n in bpy.data.objects]
@@ -272,7 +309,7 @@ if sun:  # low sun from the SW for long shadows
 
 name = design["name"]
 if RENDER:
-    scn.render.engine = "BLENDER_EEVEE"
+    use_eevee(scn)
     scn.render.resolution_x, scn.render.resolution_y = 1600, 1000
     scn.view_settings.view_transform = "AgX"
     shots = dict(cams)

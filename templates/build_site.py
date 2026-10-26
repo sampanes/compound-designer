@@ -27,6 +27,17 @@ def check(name, ok, detail=""):
 def p(rel):
     return os.path.join(PDIR, rel)
 
+def use_eevee(scn):
+    # Blender 5.0 renamed the engine identifier from BLENDER_EEVEE_NEXT back to BLENDER_EEVEE.
+    for eng in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
+        try:
+            scn.render.engine = eng
+            return eng
+        except TypeError:
+            pass
+    check("render engine", False, "no EEVEE engine in this Blender")
+    sys.exit(1)
+
 for sub in ("blender", "exports", "renders"):
     os.makedirs(p(sub), exist_ok=True)
 
@@ -105,13 +116,76 @@ def make_mat(name, color, image=None, emit=0.0):
 
 terrain.data.materials.append(make_mat("aerial_naip", (0.4, 0.4, 0.35, 1), image=p(cfg["aerial"])))
 
+def new_coll(name):
+    c = bpy.data.collections.new(name)
+    scn.collection.children.link(c)
+    return c
+
+site = new_coll("site_gis")
+for o in (terrain,):
+    scn.collection.objects.unlink(o)
+    site.objects.link(o)
+
+# --- optional wide context terrain (low-res, for horizons/views) ----------------------------
+# Lowered by CTX_DROP and holed under the detailed DEM (minus a 15 m overlap) so the two never z-fight.
+# Built before the overlays so lines that run past the detail DEM can still drape onto ground.
+CTX_DROP = 1.5
+ctx_bvh = None
+ztop = co[:, 2].max()
+if cfg.get("context_dem"):
+    bpy.ops.importgis.georaster(filepath=p(cfg["context_dem"]), importMode="DEM_RAW", step=1, buildFaces=True)
+    ctx_t = bpy.context.selected_objects[0]
+    ctx_t.name = "terrain_context"
+    bm = bmesh.new()
+    bm.from_mesh(ctx_t.data)
+    m = 15.0
+    hole = [vv for vv in bm.verts
+            if BX0 - OX + m < vv.co.x < BX1 - OX - m and BY0 - OY + m < vv.co.y < BY1 - OY - m]
+    bmesh.ops.delete(bm, geom=hole, context="VERTS")
+    for vv in bm.verts:
+        vv.co.z -= CTX_DROP
+    bm.to_mesh(ctx_t.data)
+    bm.free()
+    for poly in ctx_t.data.polygons:
+        poly.use_smooth = True
+    cme = ctx_t.data
+    cco = np.empty(len(cme.vertices) * 3)
+    cme.vertices.foreach_get("co", cco)
+    cco = cco.reshape(-1, 3)
+    ztop = max(ztop, cco[:, 2].max() + CTX_DROP)
+    if cfg.get("context_aerial"):
+        cb = cfg["context_bbox"]
+        cuv = cme.uv_layers.new(name="aerial")
+        lv = np.empty(len(cme.loops), dtype=np.int64)
+        cme.loops.foreach_get("vertex_index", lv)
+        cuv.data.foreach_set("uv", np.column_stack([(cco[lv, 0] + OX - cb[0]) / (cb[2] - cb[0]),
+                                                    (cco[lv, 1] + OY - cb[1]) / (cb[3] - cb[1])]).ravel())
+        cme.materials.append(make_mat("aerial_context", (0.4, 0.4, 0.35, 1), image=p(cfg["context_aerial"])))
+    for c in ctx_t.users_collection:
+        c.objects.unlink(ctx_t)
+    site.objects.link(ctx_t)
+    check("context terrain", len(ctx_t.data.vertices) > 1000, "%d verts" % len(ctx_t.data.vertices))
+    ctx_bvh = BVHTree.FromObject(ctx_t, bpy.context.evaluated_depsgraph_get())
+
 # --- vector overlays draped on terrain -----------------------------------------------------
 bvh = BVHTree.FromObject(terrain, bpy.context.evaluated_depsgraph_get())
-ZTOP = co[:, 2].max() + 100
+ZTOP = ztop + 100  # ray start: above both terrains
 
 def drape(xy, lift):
-    hit = bvh.ray_cast(Vector((xy[0], xy[1], ZTOP)), Vector((0, 0, -1)))
-    return Vector((xy[0], xy[1], (hit[0].z if hit[0] else co[:, 2].min()) + lift))
+    # Ground under xy: the detail terrain first, then the context terrain as it is drawn (lowered by
+    # CTX_DROP), so a line always sits on the surface the render shows. None when xy is off both, so
+    # callers can break a line there instead of dropping it to the lowest elevation.
+    for tree in (bvh, ctx_bvh):
+        if tree is not None:
+            hit = tree.ray_cast(Vector((xy[0], xy[1], ZTOP)), Vector((0, 0, -1)))
+            if hit[0]:
+                return Vector((xy[0], xy[1], hit[0].z + lift))
+    return None
+
+def drape_near(xy, lift):
+    # For points on or beside the parcel (scale figure, cameras, road frontage): never None.
+    q = drape(xy, lift)
+    return q if q is not None else Vector((xy[0], xy[1], co[:, 2].min() + lift))
 
 def densify(pts, step=1.0):
     out = []
@@ -133,11 +207,28 @@ def curve_obj(name, lines, width, mat, lift, closed=False, coll=None):
         pts = densify(to_local(pts))
         if closed and pts[0] == pts[-1]:
             pts = pts[:-1]
-        sp = cu.splines.new("POLY")
-        sp.points.add(len(pts) - 1)
-        for pt, xy in zip(sp.points, pts):
-            pt.co = (*drape(xy, lift), 1)
-        sp.use_cyclic_u = closed
+        draped = [drape(xy, lift) for xy in pts]
+        # one spline per run of points that found ground; the line breaks where there is no terrain
+        runs, run = [], []
+        for q in draped:
+            if q is not None:
+                run.append(q)
+            elif run:
+                runs.append(run)
+                run = []
+        if run:
+            runs.append(run)
+        whole = closed and len(runs) == 1 and len(runs[0]) == len(pts)
+        if closed and not whole and len(runs) > 1 and draped[0] is not None and draped[-1] is not None:
+            runs[0] = runs.pop() + runs[0]  # a cut ring: its last run continues into its first
+        for run in runs:
+            if len(run) < 2:
+                continue
+            sp = cu.splines.new("POLY")
+            sp.points.add(len(run) - 1)
+            for pt, q in zip(sp.points, run):
+                pt.co = (*q, 1)
+            sp.use_cyclic_u = whole
     ob = bpy.data.objects.new(name, cu)
     (coll or scn.collection).objects.link(ob)
     ob.data.materials.append(mat)
@@ -154,19 +245,18 @@ def rings(geom):
         return geom["coordinates"]
     return []
 
-def new_coll(name):
-    c = bpy.data.collections.new(name)
-    scn.collection.children.link(c)
-    return c
-
-site = new_coll("site_gis")
-for o in (terrain,):
-    scn.collection.objects.unlink(o)
-    site.objects.link(o)
+def ring_area(r):
+    return abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(r, r[1:]))) / 2
 
 target = json.load(open(p(cfg["parcel"])))["features"][0]
-tring = rings(target["geometry"])[0]
-parcel_ob = curve_obj("parcel_boundary", [tring], 0.30, make_mat("parcel_red", (0.9, 0.05, 0.02, 1), emit=2.0),
+# A parcel split by a road comes as a MultiPolygon. Every outer ring is drawn; the largest one is
+# "the parcel" for the checks, stats and frame (fetch_gis.py and place_masses.py pick the same ring).
+trings = sorted(rings(target["geometry"]), key=ring_area, reverse=True)
+if not trings:
+    check("parcel geometry", False, "%s, expected Polygon or MultiPolygon" % target["geometry"]["type"])
+    sys.exit(1)
+tring = trings[0]
+parcel_ob = curve_obj("parcel_boundary", trings, 0.30, make_mat("parcel_red", (0.9, 0.05, 0.02, 1), emit=2.0),
                       0.3, closed=True, coll=site)
 
 # The boundary curve actually built in Blender vs the source GeoJSON: same area, and its centroid
@@ -201,41 +291,6 @@ curve_obj("neighbor_parcels", others, 0.12, make_mat("neighbor_white", (0.85, 0.
 roads = json.load(open(p(cfg["roads"])))
 road_lines = [r for f in roads["features"] for r in rings(f["geometry"])]
 curve_obj("road_centerlines", road_lines, 0.4, make_mat("road_yellow", (0.95, 0.75, 0.1, 1), emit=1.0), 0.25, coll=site)
-
-# --- optional wide context terrain (low-res, for horizons/views) ----------------------------
-# Lowered 1.5 m and holed under the detailed DEM (minus a 15 m overlap) so the two never z-fight.
-if cfg.get("context_dem"):
-    bpy.ops.importgis.georaster(filepath=p(cfg["context_dem"]), importMode="DEM_RAW", step=1, buildFaces=True)
-    ctx_t = bpy.context.selected_objects[0]
-    ctx_t.name = "terrain_context"
-    bm = bmesh.new()
-    bm.from_mesh(ctx_t.data)
-    m = 15.0
-    hole = [vv for vv in bm.verts
-            if BX0 - OX + m < vv.co.x < BX1 - OX - m and BY0 - OY + m < vv.co.y < BY1 - OY - m]
-    bmesh.ops.delete(bm, geom=hole, context="VERTS")
-    for vv in bm.verts:
-        vv.co.z -= 1.5
-    bm.to_mesh(ctx_t.data)
-    bm.free()
-    for poly in ctx_t.data.polygons:
-        poly.use_smooth = True
-    if cfg.get("context_aerial"):
-        cb = cfg["context_bbox"]
-        cme = ctx_t.data
-        cco = np.empty(len(cme.vertices) * 3)
-        cme.vertices.foreach_get("co", cco)
-        cco = cco.reshape(-1, 3)
-        cuv = cme.uv_layers.new(name="aerial")
-        lv = np.empty(len(cme.loops), dtype=np.int64)
-        cme.loops.foreach_get("vertex_index", lv)
-        cuv.data.foreach_set("uv", np.column_stack([(cco[lv, 0] + OX - cb[0]) / (cb[2] - cb[0]),
-                                                    (cco[lv, 1] + OY - cb[1]) / (cb[3] - cb[1])]).ravel())
-        cme.materials.append(make_mat("aerial_context", (0.4, 0.4, 0.35, 1), image=p(cfg["context_aerial"])))
-    for c in ctx_t.users_collection:
-        c.objects.unlink(ctx_t)
-    site.objects.link(ctx_t)
-    check("context terrain", len(ctx_t.data.vertices) > 1000, "%d verts" % len(ctx_t.data.vertices))
 
 # --- parcel stats on the terrain: elevation range and slope inside the boundary --------------
 def inside(px, py, poly):
@@ -286,7 +341,7 @@ check("parcel terrain stats", len(zin) > 1000, json.dumps(stats))
 cx, cy = (sum(x for x, _ in loc[:-1]) / (len(loc) - 1), sum(y for _, y in loc[:-1]) / (len(loc) - 1))
 design = new_coll("design_masses")  # building masses go here
 ref = new_coll("scale_refs")
-bpy.ops.mesh.primitive_cylinder_add(radius=0.25, depth=1.8, location=drape((cx, cy), 0.9))
+bpy.ops.mesh.primitive_cylinder_add(radius=0.25, depth=1.8, location=drape_near((cx, cy), 0.9))
 person = bpy.context.active_object
 person.name = "person_1.8m"
 for c in person.users_collection:
@@ -307,11 +362,11 @@ def add_cam(name, loc3, look_at, lens=35, ortho=None):
     ob.rotation_euler = (Vector(look_at) - Vector(loc3)).to_track_quat("-Z", "Y").to_euler()
     return ob
 
-zc = drape((cx, cy), 0).z
+zc = drape_near((cx, cy), 0).z
 # road frontage: the road centerline point nearest the parcel centroid (elevation + distance stats)
 road_pts = [pt for L in road_lines for pt in densify(to_local(L))]
 rx, ry = min(road_pts, key=lambda q: math.dist(q, (cx, cy))) if road_pts else (cx - 40, cy - 40)
-stats["road_frontage_z"] = round(drape((rx, ry), 0).z, 2)
+stats["road_frontage_z"] = round(drape_near((rx, ry), 0).z, 2)
 stats["road_to_centroid_m"] = round(math.dist((rx, ry), (cx, cy)), 1)
 cams = {
     "cam_top": add_cam("cam_top", (cx, cy, zc + 400), (cx, cy, zc), ortho=150),
@@ -320,7 +375,7 @@ cams = {
 # eye level: 50 m downhill of the centroid (along the fitted aspect), looking back up the slope
 b = math.radians(stats.get("downhill_faces_deg", 180))
 ex, ey = cx + 50 * math.sin(b), cy + 50 * math.cos(b)
-cams["cam_eye"] = add_cam("cam_eye", drape((ex, ey), 1.7), drape((cx, cy), 1.7), lens=28)
+cams["cam_eye"] = add_cam("cam_eye", drape_near((ex, ey), 1.7), drape_near((cx, cy), 1.7), lens=28)
 cams["cam_top"].rotation_euler = (0, 0, 0)  # straight down, north up
 sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
 sun.data.energy = 4
@@ -335,7 +390,7 @@ scn.camera = cams["cam_oblique"]
 
 # --- render + save ----------------------------------------------------------------------------
 if RENDER:
-    scn.render.engine = "BLENDER_EEVEE"
+    use_eevee(scn)
     scn.render.resolution_x, scn.render.resolution_y = 1600, 1000
     scn.view_settings.view_transform = "AgX"
     for name, cam in cams.items():

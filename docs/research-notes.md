@@ -27,6 +27,9 @@ PyProj, or Pillow installed.
   makes the no-GDAL path work.
 - **Harmless noise:** Python `SyntaxWarning`s (old regex strings in the add-on) and libtiff
   "Unknown field with tag 33550 / 33922 / 347xx" (GeoTIFF tags that libtiff doesn't know).
+- **EEVEE identifier (2026-10):** Blender 5.0 renamed the render engine from `BLENDER_EEVEE_NEXT`
+  back to `BLENDER_EEVEE`. The scripts try `BLENDER_EEVEE` first and fall back to
+  `BLENDER_EEVEE_NEXT`, the name 4.2 through 4.5 use.
 
 ## Public data sources
 
@@ -64,6 +67,9 @@ with `returnCatalogItems=true`.
   servers, and those usually answer plain queries.
 - Request only the ID field from parcel layers. Owner names and mailing addresses are personal
   data and aren't needed for design.
+- A parcel split by a road, or recorded in pieces, comes back as a MultiPolygon. The scripts take
+  the outer ring of the largest polygon as the parcel for the frame, stats, and inside checks;
+  `build_site.py` draws every outer ring.
 
 ## Steep-lot lessons
 
