@@ -10,6 +10,14 @@ Everything is plain scripts: a stdlib-Python downloader and two headless Blender
 step prints `[CHECK] OK/FAIL` lines and exits non-zero on failure, so the pipeline is easy to
 re-run after you edit a config.
 
+## Docs
+- [docs/vision.md](docs/vision.md) -- goals, motivating examples, design principles, non-goals.
+- [docs/roadmap.md](docs/roadmap.md) -- the seven phases, milestone 1 status, parcel-analysis ideas.
+- [docs/tool-stack.md](docs/tool-stack.md) -- which tool does what, and what's optional or planned.
+- [docs/data-prep.md](docs/data-prep.md) -- preparing inputs in ArcGIS Pro or QGIS instead of `fetch_gis.py`.
+- [docs/research-notes.md](docs/research-notes.md) -- BlenderGIS on Blender 5.1, public data
+  sources, finding a parcel, steep-lot lessons.
+
 ## What you get per parcel
 - `site_master.blend`: 1 m lidar terrain with the aerial image draped on it, an optional ~8 km
   low-res context terrain (horizons and views), the parcel boundary, neighbor lines, road
