@@ -50,7 +50,9 @@ One consistent set of site data in one projected CRS with meter units:
   [`examples/notes.example.md`](../examples/notes.example.md).
 
 Pick a round local modeling origin near the parcel. Blender coordinates are CRS minus that
-origin, so numbers stay small enough for float32. Never rescale the property.
+origin, so numbers stay small enough for float32. Never rescale the property. `fetch_gis.py`
+derives the origin, the CRS, and both bboxes from the parcel on its first run and writes them into
+`parcel.json`; `doctor.py` validates them.
 
 ## Phase 3 -- Build the 3D site
 

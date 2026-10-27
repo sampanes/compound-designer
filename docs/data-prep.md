@@ -22,6 +22,9 @@ The goal is to produce **the same files `fetch_gis.py` would**, so `build_site.p
 | `gis/context_dem_10m.tif` (optional) | GeoTIFF, float32 | Several km wide, coarse, for horizons and views |
 
 Then fill in `parcel.json` (`epsg`, `local_origin_xy`, `raster_bbox`, and file paths) to match.
+`fetch_gis.py` only derives those values when it fetches, so on this path set them by hand, and
+run `doctor.py` on the folder: it checks the bboxes against the pixel sizes and the parcel file's
+CRS before Blender starts.
 
 ## Rules that keep everything aligned
 

@@ -50,35 +50,64 @@ mkdir parcels\my_parcel
 copy examples\parcel.example.json parcels\my_parcel\parcel.json
 copy examples\design.example.json parcels\my_parcel\design_v1.json
 copy examples\notes.example.md parcels\my_parcel\notes.md
-rem edit parcel.json: parcel layer URL, parcel ID, CRS, origin, bboxes (see below)
+rem edit parcel.json: the parcel layer URL, the ID field, and your parcel's ID (see below)
+python templates\doctor.py parcels\my_parcel
+templates\run_all.bat parcels\my_parcel
+```
+`doctor.py` finds Blender, probes it once headless (version, numpy, BlenderGIS, EEVEE, the
+FreeImage DLL), and validates `parcel.json` and every `design_*.json`, so anything missing shows
+up before the slow steps. `run_all.bat` then runs the three steps in order and stops at the first
+failure. They are the same three commands you can run by hand:
+```
 python templates\fetch_gis.py parcels\my_parcel
 templates\build_site.bat parcels\my_parcel
 templates\place_masses.bat parcels\my_parcel parcels\my_parcel\design_v1.json
 ```
-Set `BLENDER` to a different `blender.exe` if you're not using the default 5.1 install path.
+Add `--no-render` to `run_all.bat` or either Blender wrapper to skip the renders. The wrappers use
+`BLENDER` if it is set, else the default 5.1 install, else the newest Blender under Program Files.
 
-`fetch_gis.py` writes each file to the path `parcel.json` names, under the parcel folder
-(`gis/...` by default), and skips files that already exist. Flags: `--force` re-downloads existing
-files; `--out DIR` resolves those same relative paths under `DIR` instead of the parcel folder,
-for a one-off download elsewhere (the Blender steps always read from the parcel folder). No
-arguments or `--help` prints usage. A query that matches no parcel stops with a message naming the
-where clause it sent, so a wrong `parcel_id_field` or `parcel_id` is obvious.
+`fetch_gis.py` needs only the four keys in the example. It derives the CRS (the NAD83 / UTM zone
+that contains the parcel), the local origin, and both bboxes from the parcel itself, writes them
+back into `parcel.json`, and writes each file to the path `parcel.json` names (`gis/...` by
+default). Files that already exist are skipped, so re-running after an edit is cheap. Flags:
+`--force` re-downloads existing files; `--out DIR` resolves those same relative paths under `DIR`
+instead of the parcel folder, for a one-off download elsewhere (the Blender steps always read from
+the parcel folder). No arguments or `--help` prints usage. A query that matches no parcel stops
+with a message naming the where clause it sent, so a wrong `parcel_id_field` or `parcel_id` is
+obvious.
 
 `parcels/` is git-ignored. Your parcels, downloads, and designs stay on your machine. If you
 want history for them, make `parcels/` its own local repo.
 
 ## parcel.json
+`examples/parcel.example.json` is the minimal form; `examples/parcel.full.example.json` shows
+every key.
+
+You set:
+
 | key | meaning |
 | --- | --- |
-| `epsg` | projected CRS in meters, for example a UTM zone (`EPSG:269xx` for NAD83 / UTM). Everything is fetched in this CRS. |
-| `local_origin_xy` | a round point near the parcel. Blender X/Y = CRS minus this origin, so coordinates stay small (float32 precision). |
-| `raster_bbox` | `[xmin, ymin, xmax, ymax]` for the detailed DEM and aerial: the parcel plus about 150 m. |
-| `context_bbox` | optional wider bbox (several km) for the low-res context terrain. |
 | `parcel_layer_url` | ArcGIS REST layer URL ending in `/MapServer/<n>` or `/FeatureServer/<n>`. County GIS sites or state aggregators usually have one. |
 | `parcel_id_field`, `parcel_id` | field name and value that select your parcel (often an APN). |
+
+Derived by `fetch_gis.py` on the first run and written back into the file; set any of them
+yourself to override:
+
+| key | meaning |
+| --- | --- |
+| `epsg` | projected CRS in meters. Everything is fetched in this CRS. Derived: the NAD83 / UTM zone that contains the parcel (`EPSG:269xx`). |
+| `local_origin_xy` | a round point near the parcel. Blender X/Y = CRS minus this origin, so coordinates stay small (float32 precision). Derived: the parcel center rounded to 100 m. |
+| `raster_bbox` | `[xmin, ymin, xmax, ymax]` for the detailed DEM and aerial. Derived: the parcel plus `raster_pad_m` (default 150 m), grown to whole pixels. |
+| `context_bbox` | wider bbox for the low-res context terrain. Derived: the origin plus and minus `context_half_m` (default 4000 m), grown to whole pixels. |
+| `dem`, `aerial`, `parcel`, `context_parcels`, `roads`, `context_dem`, `context_aerial` | output file paths, relative to the parcel folder (default `gis/...`). Set `context_dem` and `context_aerial` to `null` to skip the context terrain. |
+
+Optional:
+
+| key | meaning |
+| --- | --- |
 | `parcel_out_fields`, `context_out_fields` | attributes to download. **Defaults to the ID field only**, so owner names never land on disk unless you ask for them. |
-| `dem_px_m`, `aerial_px_m`, `context_*_px_m` | resolutions (defaults: 1, 0.25, 10, 4 m). Each bbox's width and height must be a whole number of its pixel size, or `fetch_gis.py` stops. |
-| `dem`, `aerial`, `parcel`, ... | output file paths, relative to the parcel folder. |
+| `dem_px_m`, `aerial_px_m`, `context_*_px_m` | resolutions (defaults: 1, 0.25, 10, 4 m). Each bbox's width and height must be a whole number of its pixel size, or `fetch_gis.py` stops; derived bboxes always are. |
+| `raster_pad_m`, `context_half_m`, `context_vector_buffer_m` | the paddings above, and the buffer around the parcel for neighbor lines and roads (default 200 m). |
 
 Tips:
 - To find which lidar project covers a point, call `identify` on the 3DEP ImageServer with
@@ -106,6 +135,23 @@ with a `[CHECK] FAIL`.
 Every mass is one object (walls + roof + a deep foundation that the terrain hides), so you can
 move it by hand in Blender. The terrain grading, however, follows the JSON. Copy positions back
 into the JSON and re-run to re-grade.
+
+## Troubleshooting
+| Symptom | Cause and fix |
+| --- | --- |
+| `[X] no Blender found`, or `blender executable FAIL` | set `BLENDER` to your `blender.exe`; the wrappers and `doctor.py` look there first. |
+| `BlenderGIS add-on FAIL` | install BlenderGIS as a legacy add-on with the folder named `BlenderGIS`; the detail lists the GIS-like module names Blender saw. |
+| `[X] no parcel matched ...` | the where clause in the message is what the layer was asked. Fix the ID field name or value, then re-run with `--force` (the empty reply was cached). |
+| `[X] ... is not a whole number of ... pixels` | a bbox set by hand: widen it to whole pixels, or delete it from `parcel.json` and let `fetch_gis.py` derive one. |
+| `DEM georef matches raster_bbox FAIL` | the GeoTIFF's own extent disagrees with `parcel.json`, usually after a bbox edit. Delete the `gis/` rasters and re-run `fetch_gis.py`. |
+| `parcel geojson FAIL ... look like lon/lat` | the parcel file is not in the projected CRS. Delete it and re-run `fetch_gis.py`, or re-export it from your GIS in that CRS. |
+| `<id> footprint on terrain FAIL` | the mass is off the DEM. `u` and `v` are meters from the lot's front corner; compare the design with `exports/site_stats.json`. |
+| the first raster read is slow, or fails offline | BlenderGIS downloads the FreeImage DLL for imageio once, and needs internet that one time. |
+
+## Tests
+`python -m unittest discover -s tests -v` runs the network-free tests for `fetch_gis.py` (a faked
+`urlopen`, the real script), and CI runs the same command on every push. The Blender scripts have
+no automated tests; `doctor.py` and their `[CHECK]` lines are the safety net there.
 
 ## Conventions and caveats
 - Real meters, no rescaling. Z is absolute elevation (NAVD88 meters for 3DEP).
