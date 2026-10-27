@@ -80,7 +80,7 @@ except Exception:
     r["gis_addons"] = []
 try:
     import addon_utils
-    r["blendergis"] = addon_utils.enable("BlenderGIS", default_set=False) is not None
+    r["blendergis"] = addon_utils.enable("BlenderGIS", default_set=True) is not None
 except Exception:
     r["blendergis"] = False
 try:

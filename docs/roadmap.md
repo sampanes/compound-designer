@@ -29,7 +29,7 @@ above), then Phase 4's driveway and path curves with length and grade readouts.
 | What | When | Versions |
 | --- | --- | --- |
 | `build_site.py` and `place_masses.py` on one real parcel, headless, no GDAL | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f` (see [research-notes.md](research-notes.md#blendergis-on-blender-51)) |
-| Fresh folder from the README Quick start, end to end | not yet recorded | add the date, Blender and BlenderGIS versions after the first clean run |
+| Fresh folder from the README Quick start (four-key `parcel.json`, `doctor.py`, `run_all.bat`), end to end | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f`; derived bboxes matched a hand-made setup and every design stat came out identical |
 
 ## Phase 1 -- Identify a real parcel
 
