@@ -21,8 +21,8 @@ Goal: a few accurately sized hypothetical houses on a real parcel with real terr
 
 Not required for milestone 1: detailed interiors, automatic layouts, Godot.
 
-**Next:** the materials and vegetation pass for one attractive overview render (the only open row
-above), then Phase 4's driveway and path curves with length and grade readouts.
+**Next:** [Milestone 2](#milestone-2----a-steep-lot-compound-you-could-pitch). It closes the open
+row above and adds access and stepped houses.
 
 ### Verified runs
 
@@ -30,6 +30,37 @@ above), then Phase 4's driveway and path curves with length and grade readouts.
 | --- | --- | --- |
 | `build_site.py` and `place_masses.py` on one real parcel, headless, no GDAL | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f` (see [research-notes.md](research-notes.md#blendergis-on-blender-51)) |
 | Fresh folder from the README Quick start (four-key `parcel.json`, `doctor.py`, `run_all.bat`), end to end | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f`; derived bboxes matched a hand-made setup and every design stat came out identical |
+
+## Milestone 2 -- a steep-lot compound you could pitch
+
+Goal: one layout on a real hillside parcel that looks good in a render and answers "how do you
+get in?" Everything is still produced by `run_all.bat` from JSON; no hand edits in Blender.
+
+| Criterion | Done when |
+| --- | --- |
+| Attractive overview render | `place_masses.py` gives walls, roofs, and terrace paving distinct materials, adds sun and sky lighting, and scatters vegetation on the terrain outside the pads and drives. Free or procedural assets only. If an optional asset is missing, the run falls back to plain materials and still passes. |
+| Driveway and path element | A design element (for example `drive`) takes a polyline in `u`/`v` and a width, and is graded into the terrain as a ribbon. Stats report the length plus the mean and maximum grade, and flag segments steeper than a configurable `max_grade_pct` (default 15). |
+| Stepped houses | A `house` can sit on two or more pads at different floor levels (split-level), with per-pad stats, so a deep footprint on a steep slope does not need one tall foundation wall. |
+| A `design_v2` that uses all three | On a lot that falls away from the road: every house is reachable by a drive or path within `max_grade_pct`, or the stats say which one is not. |
+| Verified on a Blender machine | A row in Verified runs (see the workflow below). |
+
+Not in scope: real driveway engineering (drainage, turning radii, retaining walls), interiors,
+and Godot.
+
+### Develop anywhere, verify on a Blender machine
+
+Code can be written on a machine without Blender or a parcel. `fetch_gis.py` changes go with
+tests in `tests/`, which CI runs. The Blender scripts are verified on a machine that has Blender,
+BlenderGIS, and at least one parcel folder:
+
+```
+git pull
+python templates\doctor.py parcels\<parcel>
+templates\run_all.bat parcels\<parcel>
+```
+
+Compare the regenerated `exports/*_stats.json` with the previous run. The diff must show only the
+fields the change meant to add or change. Look at the renders, then add a row to Verified runs.
 
 ## Phase 1 -- Identify a real parcel
 
