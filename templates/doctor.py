@@ -247,6 +247,18 @@ for dpath in designs:
     for k in ("max_grade_pct", "reach_m"):
         if k in d and not (num(d[k]) and d[k] > 0):
             bad.append("%s must be a positive number" % k)
+    vg = d.get("vegetation", {})
+    if vg is not None:
+        if not isinstance(vg, dict):
+            bad.append("vegetation must be an object or null")
+        else:
+            for k in ("per_ha", "min_h", "max_h", "clear_m"):
+                if k in vg and not (num(vg[k]) and vg[k] >= 0):
+                    bad.append("vegetation.%s must be a number >= 0" % k)
+            if "seed" in vg and not (isinstance(vg["seed"], int) and not isinstance(vg["seed"], bool) and vg["seed"] >= 0):
+                bad.append("vegetation.seed must be a whole number >= 0")
+            if num(vg.get("min_h")) and num(vg.get("max_h")) and vg["min_h"] > vg["max_h"]:
+                bad.append("vegetation.min_h is larger than max_h")
     els = d.get("elements")
     if not (isinstance(els, list) and els):
         bad.append("elements must be a non-empty list")

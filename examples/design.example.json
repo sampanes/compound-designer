@@ -7,6 +7,7 @@
   },
   "floor_mode": "uphill",
   "max_grade_pct": 15,
+  "vegetation": {"per_ha": 40, "seed": 7},
   "elements": [
     {"id": "main_house", "kind": "house", "u": 30.0, "v": 14.0, "w_ft": 60, "d_ft": 32, "steps": [16, 16], "rot_deg": 0, "wall_h": 2.8, "roof_pitch": 0.5},
     {"id": "guest_cottage", "kind": "house", "u": 12.0, "v": 34.0, "w_ft": 30, "d_ft": 24, "rot_deg": 15, "wall_h": 2.7, "roof_pitch": 0.25},

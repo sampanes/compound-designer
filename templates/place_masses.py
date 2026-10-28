@@ -5,7 +5,9 @@
 # renders/<design name>_*.png and exports/<design name>_stats.json. Exits 1 if any [CHECK] fails.
 # Elements: house (w_ft x d_ft; "steps" splits it onto several pads at their own floor levels), terrace
 # (w_m x d_m) and drive (a u/v polyline with a width: a driveway or path graded into the terrain as a
-# ribbon, with length and grade stats and a check against max_grade_pct).
+# ribbon, with length and grade stats and a check against max_grade_pct). A render pass then gives the
+# masses procedural materials, the world a physical sky, and scatters simple trees where the aerial is
+# green (design key "vegetation"; null turns it off).
 # Each mass is ONE object (walls + roof + deep foundation) with its origin at floor level, so it can be
 # moved/rotated in Blender; the foundation runs 20 m down and the terrain hides the buried part.
 import sys, os, json, math
@@ -400,6 +402,156 @@ if sun:  # low sun from the SW for long shadows
     sun.data.energy = 4.5
     sun.data.angle = math.radians(1.5)
 
+# --- render pass: procedural materials, a physical sky, trees scattered on the terrain ------------
+# Everything here is cosmetic, so a failure reports one check and the stats and .blend still land.
+VEG_DEFAULTS = {"per_ha": 40, "seed": 1, "min_h": 4.0, "max_h": 11.0, "clear_m": 2.0}
+veg = design.get("vegetation", {})
+veg = {**VEG_DEFAULTS, **veg} if isinstance(veg, dict) else {**VEG_DEFAULTS, "per_ha": 0}  # null = no trees
+
+def texture(m, dark, light, scale, rough=None):
+    # Base color from a noise field through a two-stop ramp, in object meters, so flat masses read as surfaces.
+    nt = m.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    tc, noise, ramp = (nt.nodes.new(n) for n in ("ShaderNodeTexCoord", "ShaderNodeTexNoise", "ShaderNodeValToRGB"))
+    noise.inputs["Scale"].default_value = scale
+    noise.inputs["Detail"].default_value = 6.0
+    ramp.color_ramp.elements[0].position, ramp.color_ramp.elements[0].color = 0.35, dark
+    ramp.color_ramp.elements[1].position, ramp.color_ramp.elements[1].color = 0.65, light
+    nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
+    nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+    if rough is not None:
+        bsdf.inputs["Roughness"].default_value = rough
+
+def pavers(m, brick, mortar):
+    nt = m.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    tc, bt = nt.nodes.new("ShaderNodeTexCoord"), nt.nodes.new("ShaderNodeTexBrick")
+    bt.inputs["Scale"].default_value = 1.0          # 0.5 x 0.25 m pavers in object meters
+    bt.inputs["Mortar Size"].default_value = 0.015
+    bt.inputs["Color1"].default_value = brick
+    bt.inputs["Color2"].default_value = tuple(c * 0.9 for c in brick[:3]) + (1,)
+    bt.inputs["Mortar"].default_value = mortar
+    nt.links.new(tc.outputs["Object"], bt.inputs["Vector"])
+    nt.links.new(bt.outputs["Color"], bsdf.inputs["Base Color"])
+
+def physical_sky(world, elevation_deg, azimuth_deg, strength):
+    # Nishita sky without its sun disc (the sun lamp does the lighting); the sky fills the shadows and
+    # gives the horizon. sun_rotation 0 puts the sun at +Y (north) and grows counterclockwise, so a
+    # compass azimuth maps as 270 - azimuth. Unverified in Blender: if the bright side of the sky and
+    # the shadows disagree, this is the line to flip.
+    nt = world.node_tree
+    sky = nt.nodes.new("ShaderNodeTexSky")
+    sky.sky_type = "NISHITA"
+    sky.sun_disc = False
+    sky.sun_elevation = math.radians(elevation_deg)
+    sky.sun_rotation = math.radians(270 - azimuth_deg)
+    bg = nt.nodes["Background"]
+    nt.links.new(sky.outputs["Color"], bg.inputs["Color"])
+    bg.inputs["Strength"].default_value = strength
+
+def tree_mesh(name, conifer):
+    # a unit-height tree: trunk 0..1 with the canopy on its upper part; scaled per instance
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=6, radius1=0.035, radius2=0.025, depth=1.0,
+                          matrix=Matrix.Translation((0, 0, 0.5)))
+    for f in bm.faces:
+        f.material_index = 1  # trunk; the canopy faces created next default to 0
+    if conifer:
+        bmesh.ops.create_cone(bm, cap_ends=True, segments=7, radius1=0.30, radius2=0.0, depth=0.85,
+                              matrix=Matrix.Translation((0, 0, 0.575)))
+    else:
+        bmesh.ops.create_icosphere(bm, subdivisions=1, radius=0.34, matrix=Matrix.Translation((0, 0, 0.66)))
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    canopy = mat("tree_canopy_%s" % ("conifer" if conifer else "broadleaf"),
+                 (0.10, 0.22, 0.08, 1) if conifer else (0.18, 0.32, 0.10, 1), rough=0.9)
+    texture(canopy, (0.08, 0.16, 0.06, 1) if conifer else (0.12, 0.24, 0.07, 1),
+            (0.16, 0.30, 0.10, 1) if conifer else (0.26, 0.40, 0.14, 1), 1.5)
+    for m in (canopy, mat("tree_trunk", (0.25, 0.18, 0.12, 1), rough=0.95)):
+        me.materials.append(m)
+    return me
+
+def aerial_pixels():
+    # the terrain's aerial image as an (h, w, 4) float array, rows bottom-up like Blender stores them
+    for node in terrain.data.materials[0].node_tree.nodes:
+        if node.type == "TEX_IMAGE" and node.image is not None:
+            img = node.image
+            w, h = img.size
+            if w and h:
+                px = np.empty(w * h * 4, dtype=np.float32)
+                img.pixels.foreach_get(px)
+                return px.reshape(h, w, 4)
+    return None
+
+def scatter_trees(per_ha, seed, hmin, hmax, clear):
+    """Trees where the aerial is green, outside every pad and drive (plus clear m), down on the terrain.
+    Returns (count, aerial filter used)."""
+    rng = np.random.default_rng(seed)
+    x0, y0, x1, y1 = cfg["raster_bbox"][0] - OX, cfg["raster_bbox"][1] - OY, cfg["raster_bbox"][2] - OX, cfg["raster_bbox"][3] - OY
+    target = int(per_ha * (x1 - x0) * (y1 - y0) / 1e4)
+    if target <= 0:
+        return 0, False
+    n = target * 3  # candidates; the aerial filter and the clearances thin them
+    xs, ys = rng.uniform(x0, x1, n), rng.uniform(y0, y1, n)
+    keep = np.ones(n, bool)
+    try:
+        px = aerial_pixels()
+    except Exception as e:  # an unreadable aerial means uniform trees, not no trees
+        print("[INFO] aerial not readable for the tree scatter (%s)" % e)
+        px = None
+    if px is not None:
+        h, w = px.shape[:2]
+        col = np.clip(((xs - x0) / (x1 - x0) * w).astype(int), 0, w - 1)
+        row = np.clip(((ys - y0) / (y1 - y0) * h).astype(int), 0, h - 1)
+        r, g, b = px[row, col, 0], px[row, col, 1], px[row, col, 2]
+        keep &= (g > r * 1.08) & (g > b * 1.08) & (g > 0.06)
+    for cx, cy, rot, w, d, pads in pad_table.values():
+        c, s = math.cos(-rot), math.sin(-rot)
+        lx, ly = (xs - cx) * c - (ys - cy) * s, (xs - cx) * s + (ys - cy) * c
+        keep &= ~((np.abs(lx) <= w / 2 + clear) & (np.abs(ly) <= d / 2 + clear))
+    for pts, _, width in drive_lines.values():
+        for a, b in zip(pts, pts[1:]):
+            a, dv = np.array(a), np.array(b) - np.array(a)
+            t = np.clip(((np.column_stack([xs, ys]) - a) @ dv) / (dv @ dv), 0, 1)
+            dist = np.linalg.norm(np.column_stack([xs, ys]) - (a + t[:, None] * dv), axis=1)
+            keep &= dist > width / 2 + clear
+    idx = np.flatnonzero(keep)[:target]
+    vcoll = bpy.data.collections.new("vegetation")
+    scn.collection.children.link(vcoll)
+    meshes = [tree_mesh("tree_conifer", True), tree_mesh("tree_broadleaf", False)]
+    count = 0
+    for i in idx:
+        z = ground(float(xs[i]), float(ys[i]))
+        if z is None:
+            continue
+        hgt = float(rng.uniform(hmin, hmax))
+        ob = bpy.data.objects.new("tree_%04d" % count, meshes[int(rng.integers(2))])
+        ob.location = (float(xs[i]), float(ys[i]), z)
+        ob.rotation_euler = (0, 0, float(rng.uniform(0, 2 * math.pi)))
+        ob.scale = (hgt, hgt, hgt)
+        vcoll.objects.link(ob)
+        count += 1
+    return count, px is not None
+
+try:
+    texture(M_WALL, (0.86, 0.83, 0.75, 1), (0.95, 0.93, 0.87, 1), 0.6, rough=0.75)
+    texture(M_ROOF, (0.22, 0.15, 0.12, 1), (0.36, 0.26, 0.21, 1), 2.0, rough=0.85)
+    texture(M_FND, (0.48, 0.48, 0.46, 1), (0.62, 0.62, 0.60, 1), 1.2, rough=0.9)
+    texture(M_DRIVE, (0.22, 0.21, 0.20, 1), (0.36, 0.35, 0.33, 1), 3.0, rough=0.95)
+    pavers(M_TER, (0.76, 0.68, 0.56, 1), (0.55, 0.52, 0.47, 1))
+    if scn.world is not None:
+        physical_sky(scn.world, 32, 225, 0.25)  # matches the sun lamp: 32 deg up, in the SW
+    trees, used_aerial = scatter_trees(veg["per_ha"], veg["seed"], veg["min_h"], veg["max_h"], veg["clear_m"])
+    stats["vegetation"] = {"trees": trees, "per_ha": veg["per_ha"], "seed": veg["seed"], "aerial_filter": used_aerial}
+    check("render pass", True, "%d trees (%s), materials, sky" % (trees, "where the aerial is green" if used_aerial else "aerial not readable: uniform"))
+except Exception as e:  # cosmetic: report, keep going, so the stats and the .blend are still written
+    import traceback
+    traceback.print_exc()
+    check("render pass", False, "%s: %s" % (type(e).__name__, e))
+VEGETATION = bpy.data.collections.get("vegetation")
+
 name = design["name"]
 if RENDER:
     use_eevee(scn)
@@ -412,9 +564,13 @@ if RENDER:
         scn.camera = cam
         for o in OVERLAYS:  # GIS line tubes read well from above but fill the frame at eye level
             o.hide_render = k in EYE_SHOTS
+        if VEGETATION:  # the top shot is the plan view: no tree canopies over the pads
+            VEGETATION.hide_render = k == "top"
         scn.render.filepath = p(os.path.join("renders", "%s_%s.png" % (name, k)))
         bpy.ops.render.render(write_still=True)
         check("render " + k, os.path.exists(scn.render.filepath))
+    if VEGETATION:
+        VEGETATION.hide_render = False
 scn.camera = cams["overview"]
 
 with open(p("exports/%s_stats.json" % name), "w") as f:

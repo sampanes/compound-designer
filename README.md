@@ -29,7 +29,7 @@ JSON.
 | `blender/site_master.blend` | 1 m lidar terrain with the aerial image draped on it, an optional ~8 km low-res context terrain (horizons and views), the parcel boundary, neighbor lines, road centerlines, a 1.8 m person for scale, and top/oblique/eye-level cameras. |
 | `exports/site_stats.json` | area, elevation range, slope (at the DEM pixel size and 5 m smoothed), best-fit grade and which way the lot faces. |
 | `renders/cam_top.png`, `cam_oblique.png`, `cam_eye.png` | the bare site from above, from an oblique, and from eye level downhill of the lot looking back up the slope. |
-| `blender/<design>.blend` | one per layout `design_*.json`: the building masses and drives on a graded copy of the terrain (pads cut to floor level, drives cut and filled to their grade line). |
+| `blender/<design>.blend` | one per layout `design_*.json`: the building masses and drives on a graded copy of the terrain (pads cut to floor level, drives cut and filled to their grade line), with procedural materials, a physical sky, and simple trees scattered where the aerial is green. |
 | `exports/<design>_stats.json` | per-element stats (floor elevation, uphill cut, exposed foundation downhill, clearance to the boundary, which `floor_mode` was used, per pad for a stepped house; length and grades for a drive, and which drive reaches each house) and overall building coverage. |
 | `renders/<design>_overview.png`, `_courtyard_eye.png`, `_from_road.png`, `_top.png` | the layout from downhill and off to one side, from the terrace looking out, from the road, and from above. |
 
@@ -138,6 +138,12 @@ Elements:
   say which drive or path reaches it (comes within `reach_m`, default 3 m, of its walls) and the
   design lists `unreached_houses`.
 
+A top-level `vegetation` object controls the trees that `place_masses.py` scatters for the renders:
+`per_ha` (default 40), `seed`, `min_h` and `max_h` in meters (4 and 11), and `clear_m`, the gap
+kept around every pad and drive (2). Trees go where the aerial image is green, and only on the
+terrain, so a bare lot gets few and a wooded one gets many. `"vegetation": null` turns them off.
+They are simple shapes in a `vegetation` collection, hidden in the top render.
+
 Houses and terraces have `u`, `v`, and `rot_deg`. The top-level `floor_mode` is the default for
 every pad: `balanced` (mean ground under the footprint) or `uphill` (highest ground, no cut). An
 element can override it with its own `floor_mode` key, and the per-element stats record which was
@@ -161,6 +167,7 @@ terrain copy, so move them in the JSON.
 | `<id> footprint on terrain FAIL` | the mass is off the DEM. `u` and `v` are meters from the lot's front corner; compare the design with `exports/site_stats.json`. |
 | `<id> on terrain FAIL` | a drive point is off the DEM; same cause as the footprint case. |
 | `<id> grade within 15% FAIL` | a segment of that drive is steeper than `max_grade_pct`; the detail names it. Add a point so the route runs across the slope, lengthen it, or raise the limit. |
+| `render pass FAIL` | the materials, sky or tree scatter hit a Blender API problem; the traceback is just above in the log, and the stats and `.blend` were still written. `"vegetation": null` skips the scatter. |
 | the first raster read is slow, or fails offline | BlenderGIS downloads the FreeImage DLL for imageio once, and needs internet that one time. |
 
 ## Tests

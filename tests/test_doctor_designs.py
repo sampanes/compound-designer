@@ -64,6 +64,19 @@ class DoctorDesignTests(unittest.TestCase):
         ]
         self.assertTrue(doctor_line(write_design(d)).startswith("[CHECK] OK"))
 
+    def test_vegetation_key(self):
+        with open(EXAMPLE) as f:
+            d = json.load(f)
+        d["vegetation"] = None
+        self.assertTrue(doctor_line(write_design(d)).startswith("[CHECK] OK"))
+        d["vegetation"] = {"per_ha": -1, "seed": 2.5, "min_h": 12, "max_h": 4}
+        line = doctor_line(write_design(d))
+        for msg in ("vegetation.per_ha must be a number >= 0", "vegetation.seed must be a whole number >= 0",
+                    "vegetation.min_h is larger than max_h"):
+            self.assertIn(msg, line)
+        d["vegetation"] = [40]
+        self.assertIn("vegetation must be an object or null", doctor_line(write_design(d)))
+
 
 if __name__ == "__main__":
     unittest.main()
