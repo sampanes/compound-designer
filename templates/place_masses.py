@@ -3,6 +3,9 @@
 #   blender -b --factory-startup -noaudio --python place_masses.py -- PARCEL_DIR DESIGN.json [--no-render]
 # Reads blender/site_master.blend (never modifies it), writes blender/<design name>.blend,
 # renders/<design name>_*.png and exports/<design name>_stats.json. Exits 1 if any [CHECK] fails.
+# Elements: house (w_ft x d_ft; "steps" splits it onto several pads at their own floor levels), terrace
+# (w_m x d_m) and drive (a u/v polyline with a width: a driveway or path graded into the terrain as a
+# ribbon, with length and grade stats and a check against max_grade_pct).
 # Each mass is ONE object (walls + roof + deep foundation) with its origin at floor level, so it can be
 # moved/rotated in Blender; the foundation runs 20 m down and the terrain hides the buried part.
 import sys, os, json, math
@@ -11,14 +14,22 @@ import numpy as np
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # design_geom.py sits next to this script
+from design_geom import footprint_vs_parcel, polyline_to_polygon_distance, offsets, profile, split_depths
+
 argv = sys.argv[sys.argv.index("--") + 1:]
 PDIR, DESIGN = os.path.abspath(argv[0]), os.path.abspath(argv[1])
 RENDER = "--no-render" not in argv
 FT = 0.3048
 FOUNDATION_DEPTH = 20.0
+CUT_MARGIN = 0.75   # a pad is cut this far beyond its footprint
+DRIVE_BLEND = 1.0   # a drive's cut or fill tapers back to the terrain over this distance beyond its edge
+DRIVE_LIFT = 0.03   # the drive surface sits this far above the graded terrain
 cfg = json.load(open(os.path.join(PDIR, "parcel.json")))
 design = json.load(open(DESIGN))
 OX, OY = cfg["local_origin_xy"]
+MAX_GRADE = design.get("max_grade_pct", 15)
+REACH = design.get("reach_m", 3.0)
 failed = []
 
 def check(name, ok, detail=""):
@@ -75,36 +86,6 @@ def uv_to_xy(u, v):
     q = F0 + U * u + V * v
     return q.x, q.y
 
-def inside(px, py, poly):
-    res = False
-    for (x1, y1), (x2, y2) in zip(poly, poly[1:]):
-        if (y1 > py) != (y2 > py) and px < (x2 - x1) * (py - y1) / (y2 - y1) + x1:
-            res = not res
-    return res
-
-def seg_dist(pt, a, b):
-    ax, ay = a; bx, by = b; px, py = pt
-    dx, dy = bx - ax, by - ay
-    L = dx * dx + dy * dy
-    t = 0 if L == 0 else max(0, min(1, ((px - ax) * dx + (py - ay) * dy) / L))
-    return math.hypot(ax + t * dx - px, ay + t * dy - py)
-
-def segs_cross(a, b, c, d):
-    def orient(p, q, r):
-        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
-    return (orient(a, b, c) > 0) != (orient(a, b, d) > 0) and (orient(c, d, a) > 0) != (orient(c, d, b) > 0)
-
-def footprint_vs_parcel(corners, ring):
-    """(fully inside, min clearance m). Inside = every corner inside and no edge crosses the boundary,
-    so concave lots are handled. Clearance = true distance between the two outlines."""
-    fp = list(corners) + [corners[0]]
-    fsegs, psegs = list(zip(fp, fp[1:])), list(zip(ring, ring[1:]))
-    crosses = any(segs_cross(a, b, c, d) for a, b in fsegs for c, d in psegs)
-    ins = not crosses and all(inside(x, y, ring) for x, y in corners)
-    clear = 0.0 if crosses else min(min(seg_dist(c, a, b) for c in corners for a, b in psegs),
-                                    min(seg_dist(q, a, b) for q in ring[:-1] for a, b in fsegs))
-    return ins, clear
-
 def mat(name, color, rough=0.8):
     m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     m.use_nodes = True
@@ -118,17 +99,18 @@ M_WALL = mat("mass_wall", (0.92, 0.89, 0.82, 1))
 M_ROOF = mat("mass_roof", (0.32, 0.22, 0.18, 1))
 M_FND = mat("mass_foundation", (0.55, 0.55, 0.53, 1))
 M_TER = mat("mass_terrace", (0.78, 0.70, 0.58, 1), rough=0.95)
+M_DRIVE = mat("mass_drive", (0.30, 0.29, 0.28, 1), rough=0.95)
 
 def add_box(bm, x0, x1, y0, y1, z0, z1, mi):
     vs = [bm.verts.new((x, y, z)) for z in (z0, z1) for y in (y0, y1) for x in (x0, x1)]
     for f in ((0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)):
         bm.faces.new([vs[i] for i in f]).material_index = mi
 
-def add_gable(bm, w, d, z, rise, over, mi):
-    # ridge along local X (the long side); eaves at y = +/- (d/2 + over)
-    x0, x1, y = -w / 2 - over, w / 2 + over, d / 2 + over
-    a = [bm.verts.new(c) for c in ((x0, -y, z), (x1, -y, z), (x1, y, z), (x0, y, z),
-                                   (x0, 0, z + rise), (x1, 0, z + rise))]
+def add_gable(bm, w, y0, y1, z, rise, over, mi):
+    # ridge along local X (the long side) halfway between y0 and y1; eaves at y0 - over and y1 + over
+    x0, x1, ya, yb, ym = -w / 2 - over, w / 2 + over, y0 - over, y1 + over, (y0 + y1) / 2
+    a = [bm.verts.new(c) for c in ((x0, ya, z), (x1, ya, z), (x1, yb, z), (x0, yb, z),
+                                   (x0, ym, z + rise), (x1, ym, z + rise))]
     for f in ((0, 1, 5, 4), (3, 4, 5, 2), (0, 4, 3), (1, 2, 5), (0, 3, 2, 1)):
         bm.faces.new([a[i] for i in f]).material_index = mi
 
@@ -141,8 +123,19 @@ ids = [e["id"] for e in design["elements"]]
 dupes = sorted({i for i in ids if ids.count(i) > 1})
 if dupes:  # objects, meshes and stats are all keyed by id
     fatal("element ids unique", "duplicates: %s" % dupes)
-footprints = {}
+KINDS = ("house", "terrace", "drive")
 for el in design["elements"]:
+    if el.get("kind") not in KINDS:
+        fatal("%s kind" % el["id"], "%r, expected one of %s" % (el.get("kind"), ", ".join(KINDS)))
+masses = [e for e in design["elements"] if e["kind"] != "drive"]
+drives = [e for e in design["elements"] if e["kind"] == "drive"]
+houses = [e["id"] for e in masses if e["kind"] == "house"]
+if not masses:
+    fatal("elements", "a design needs at least one house or terrace")
+
+# --- houses and terraces: one object each, on one pad or (a stepped house) several -----------------
+footprints, pad_table = {}, {}
+for el in masses:
     if el["kind"] == "house":
         w, d = el["w_ft"] * FT, el["d_ft"] * FT
     else:
@@ -153,25 +146,40 @@ for el in design["elements"]:
     corners = [tuple(Vector((cx, cy)) + R @ Vector((sx * w / 2, sy * d / 2)))
                for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
     footprints[el["id"]] = corners
-    # sample terrain under the footprint on a 1 m grid
-    zs = [ground(*(Vector((cx, cy)) + R @ Vector((gx, gy))))
-          for gx in np.arange(-w / 2, w / 2 + 0.01, 1.0) for gy in np.arange(-d / 2, d / 2 + 0.01, 1.0)]
-    zs = [z for z in zs if z is not None]
-    if not zs:
-        fatal("%s footprint on terrain" % el["id"], "no DEM under the footprint; check u/v against raster_bbox")
-    zmin, zmax = min(zs), max(zs)
     mode = el.get("floor_mode", design["floor_mode"])
     if mode not in ("balanced", "uphill"):
         fatal("%s floor_mode" % el["id"], "%r, expected balanced or uphill" % mode)
-    floor = {"balanced": float(np.mean(zs)), "uphill": zmax}[mode]
+    # pads across the depth, front first: local +y faces the road (smaller v). A plain mass is one pad.
+    if el["kind"] == "house" and "steps" in el:
+        try:
+            depths = [s * FT for s in split_depths(el["steps"], el["d_ft"])]
+        except ValueError as e:
+            fatal("%s steps" % el["id"], str(e))
+    else:
+        depths = [d]
+    pads, y1 = [], d / 2  # (y0, y1, floor, ground min, ground max) per pad
+    for pd in depths:
+        y0 = y1 - pd
+        # sample terrain under the pad on a 1 m grid
+        zs = [ground(*(Vector((cx, cy)) + R @ Vector((gx, gy))))
+              for gx in np.arange(-w / 2, w / 2 + 0.01, 1.0) for gy in np.arange(y0, y1 + 0.01, 1.0)]
+        zs = [z for z in zs if z is not None]
+        if not zs:
+            fatal("%s footprint on terrain" % el["id"], "no DEM under the footprint; check u/v against raster_bbox")
+        pads.append((y0, y1, {"balanced": float(np.mean(zs)), "uphill": max(zs)}[mode], min(zs), max(zs)))
+        y1 = y0
+    floor = pads[0][2]
+    pad_table[el["id"]] = (cx, cy, rot, w, d, pads)
 
     me = bpy.data.meshes.new(el["id"])
     bm = bmesh.new()
     if el["kind"] == "house":
         h = el["wall_h"]
-        add_box(bm, -w / 2, w / 2, -d / 2, d / 2, 0, h, 0)
-        add_gable(bm, w, d, h, (d / 2 + 0.5) * el["roof_pitch"], 0.5, 1)
-        add_box(bm, -w / 2 + 0.05, w / 2 - 0.05, -d / 2 + 0.05, d / 2 - 0.05, -FOUNDATION_DEPTH, 0, 2)
+        for y0, y1, fz, _, _ in pads:
+            z = fz - floor  # this pad's floor relative to the object origin, the front pad's floor
+            add_box(bm, -w / 2, w / 2, y0, y1, z, z + h, 0)
+            add_gable(bm, w, y0, y1, z + h, ((y1 - y0) / 2 + 0.5) * el["roof_pitch"], 0.5, 1)
+            add_box(bm, -w / 2 + 0.05, w / 2 - 0.05, y0 + 0.05, y1 - 0.05, -FOUNDATION_DEPTH, z, 2)
         for m in (M_WALL, M_ROOF, M_FND):
             me.materials.append(m)
     else:
@@ -199,14 +207,87 @@ for el in design["elements"]:
 
     ins, clear = footprint_vs_parcel(corners, loc_ring)
     info = dict(footprint_m2=round(w * d, 1), footprint_sqft=round(w * d / FT / FT), floor_mode=mode,
-                floor_z=round(floor, 2), ground_z_range=[round(zmin, 2), round(zmax, 2)],
-                cut_depth_uphill_m=round(zmax - floor, 2), exposed_foundation_downhill_m=round(floor - zmin, 2),
+                floor_z=round(floor, 2),
+                ground_z_range=[round(min(q[3] for q in pads), 2), round(max(q[4] for q in pads), 2)],
+                cut_depth_uphill_m=round(max(q[4] - q[2] for q in pads), 2),
+                exposed_foundation_downhill_m=round(max(q[2] - q[3] for q in pads), 2),
                 min_clearance_to_boundary_m=round(clear, 1))
+    if len(pads) > 1:  # per-pad figures for a stepped house, front first
+        info["pads"] = [dict(depth_ft=round((y1 - y0) / FT, 1), floor_z=round(fz, 2),
+                             step_from_front_pad_m=round(fz - floor, 2), ground_z_range=[round(zl, 2), round(zh, 2)],
+                             cut_depth_uphill_m=round(zh - fz, 2), exposed_foundation_downhill_m=round(fz - zl, 2))
+                        for y0, y1, fz, zl, zh in pads]
     stats["elements"][el["id"]] = info
     check("%s inside parcel" % el["id"], ins, json.dumps(info))
 
-# --- graded terrain: copy of the terrain with each pad cut down to its floor (fill side untouched,
-# so foundations show on the downhill side). Follows the design JSON, not hand-moved objects.
+# --- drives and paths: a ribbon along a u/v polyline, level across, straight between its points ------
+def pad_floor_at(x, y):
+    # floor of the pad under world (x, y) when a mass sits there (within CUT_MARGIN), else None
+    for cx, cy, rot, w, d, pads in pad_table.values():
+        q = Matrix.Rotation(-rot, 2) @ Vector((x - cx, y - cy))
+        if abs(q.x) <= w / 2 + CUT_MARGIN:
+            for y0, y1, fz, _, _ in pads:
+                if y0 - CUT_MARGIN <= q.y <= y1 + CUT_MARGIN:
+                    return fz
+    return None
+
+drive_lines = {}
+for el in drives:
+    pts = [uv_to_xy(u, v) for u, v in el["points"]]
+    width, limit = el["width_m"], el.get("max_grade_pct", MAX_GRADE)
+    zs = []
+    for (x, y), uv in zip(pts, el["points"]):
+        z = pad_floor_at(x, y)  # a point on a pad takes the pad's floor, so a drive meets its house at floor level
+        z = ground(x, y) if z is None else z
+        if z is None:
+            fatal("%s on terrain" % el["id"], "point (u %g, v %g) is off the DEM; check it against raster_bbox" % tuple(uv))
+        zs.append(z)
+    try:
+        edges = offsets(pts, width)
+        prof = profile(pts, zs, limit)
+    except ValueError as e:
+        fatal("%s points" % el["id"], str(e))
+    # one quad per segment between the left and right edges, just above the graded terrain
+    me = bpy.data.meshes.new(el["id"])
+    bm = bmesh.new()
+    x0, y0, z0 = pts[0][0], pts[0][1], zs[0]
+    left = [bm.verts.new((l[0] - x0, l[1] - y0, z - z0 + DRIVE_LIFT)) for (l, _), z in zip(edges, zs)]
+    right = [bm.verts.new((r[0] - x0, r[1] - y0, z - z0 + DRIVE_LIFT)) for (_, r), z in zip(edges, zs)]
+    for i in range(len(pts) - 1):
+        bm.faces.new((left[i], right[i], right[i + 1], left[i + 1]))
+    me.materials.append(M_DRIVE)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new(el["id"], me)
+    coll.objects.link(ob)
+    ob.location = (x0, y0, z0)
+    drive_lines[el["id"]] = (pts, zs, width)
+    reach = [h for h in houses
+             if polyline_to_polygon_distance(pts, footprints[h] + [footprints[h][0]]) <= width / 2 + REACH]
+    stats["elements"][el["id"]] = dict(kind="drive", width_m=width, **prof, reaches=reach)
+    steep = ["segment %d (%.0f m) at %.1f%%" % (s["from"], s["length_m"], s["grade_pct"])
+             for s in prof["segments"] if not s["ok"]]
+    check("%s grade within %g%%" % (el["id"], limit), not steep, "; ".join(steep) if steep else
+          "%.0f m, max %.1f%%, reaches %s" % (prof["length_m"], prof["max_grade_pct"], ", ".join(reach) or "no house"))
+
+if drives:  # access: which drive or path comes within REACH of each house's walls
+    stats.update(max_grade_pct=MAX_GRADE, reach_m=REACH)
+    unreached = []
+    for h in houses:
+        ring_h = footprints[h] + [footprints[h][0]]
+        gap, via = min((polyline_to_polygon_distance(pts, ring_h) - width / 2, did)
+                       for did, (pts, _, width) in drive_lines.items())
+        ok = gap <= REACH
+        stats["elements"][h]["access"] = {"via": via if ok else None, "gap_m": round(max(gap, 0.0), 1)}
+        if not ok:
+            unreached.append(h)
+    stats["unreached_houses"] = unreached
+    print("[INFO] access: " + ("every house is reached by a drive or path" if not unreached else
+                               "no drive or path within %g m of %s" % (REACH, ", ".join(unreached))))
+
+# --- graded terrain: a copy of the terrain with each drive cut and filled to its grade line, then each
+# pad cut down to its floor (fill side untouched, so foundations show on the downhill side; a pad wins
+# over a drive that crosses it). Follows the design JSON, not hand-moved objects.
 graded = terrain.copy()
 graded.data = terrain.data.copy()
 graded.name = graded.data.name = "terrain_graded"
@@ -217,16 +298,28 @@ terrain.hide_set(True)
 gco = np.empty(len(graded.data.vertices) * 3)
 graded.data.vertices.foreach_get("co", gco)
 gco = gco.reshape(-1, 3)
-CUT_MARGIN = 0.75
-for el in design["elements"]:
-    ob = bpy.data.objects[el["id"]]
-    w, d = ((el["w_ft"] * FT, el["d_ft"] * FT) if el["kind"] == "house" else (el["w_m"], el["d_m"]))
-    rel = gco[:, :2] - np.array(ob.location.xy)
-    c, s = math.cos(-ob.rotation_euler.z), math.sin(-ob.rotation_euler.z)
+for pts, zs, width in drive_lines.values():
+    hw = width / 2
+    for (a, b), (za, zb) in zip(zip(pts, pts[1:]), zip(zs, zs[1:])):
+        a, dv = np.array(a), np.array(b) - np.array(a)
+        t = np.clip(((gco[:, :2] - a) @ dv) / (dv @ dv), 0, 1)
+        dist = np.linalg.norm(gco[:, :2] - (a + t[:, None] * dv), axis=1)
+        zp = za + t * (zb - za)  # the grade line, straight between the two points
+        on = dist <= hw
+        gco[on, 2] = zp[on]
+        edge = (dist > hw) & (dist <= hw + DRIVE_BLEND)
+        wgt = (dist[edge] - hw) / DRIVE_BLEND
+        gco[edge, 2] = zp[edge] * (1 - wgt) + gco[edge, 2] * wgt
+for cx, cy, rot, w, d, pads in pad_table.values():
+    rel = gco[:, :2] - np.array((cx, cy))
+    c, s = math.cos(-rot), math.sin(-rot)
     lx, ly = rel[:, 0] * c - rel[:, 1] * s, rel[:, 0] * s + rel[:, 1] * c
-    sel = (np.abs(lx) <= w / 2 + CUT_MARGIN) & (np.abs(ly) <= d / 2 + CUT_MARGIN)
-    top = ob.location.z - 0.05
-    gco[sel, 2] = np.minimum(gco[sel, 2], top)
+    for y0, y1, fz, _, _ in pads:
+        # the margin applies at the mass's own edges, not at the step between two pads
+        lo = y0 - (CUT_MARGIN if abs(y0 + d / 2) < 1e-6 else 0)
+        hi = y1 + (CUT_MARGIN if abs(y1 - d / 2) < 1e-6 else 0)
+        sel = (np.abs(lx) <= w / 2 + CUT_MARGIN) & (ly >= lo) & (ly <= hi)
+        gco[sel, 2] = np.minimum(gco[sel, 2], fz - 0.05)
 graded.data.vertices.foreach_set("co", gco.ravel())
 graded.data.update()
 
@@ -241,10 +334,10 @@ def overlap(a, b):
             if max(pa) < min(pb) or max(pb) < min(pa):
                 return False
     return True
-clash = [(a, b) for i, a in enumerate(ids) for b in ids[i + 1:] if overlap(footprints[a], footprints[b])]
+mass_ids = [e["id"] for e in masses]
+clash = [(a, b) for i, a in enumerate(mass_ids) for b in mass_ids[i + 1:] if overlap(footprints[a], footprints[b])]
 check("no footprint overlaps", not clash, str(clash))
 parcel_area = 0.5 * abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(loc_ring, loc_ring[1:])))
-houses = [k for k, e in zip(ids, design["elements"]) if e["kind"] == "house"]
 cov = sum(stats["elements"][k]["footprint_m2"] for k in houses) / parcel_area * 100
 stats["building_coverage_pct"] = round(cov, 1)
 print("[INFO] building coverage %.1f%% of %.0f m2" % (cov, parcel_area))
@@ -272,7 +365,7 @@ def use_eevee(scn):
             pass
     fatal("render engine", "no EEVEE engine in this Blender")
 
-els = design["elements"]
+els = masses
 mid = Vector(uv_to_xy(sum(e["u"] for e in els) / len(els), sum(e["v"] for e in els) / len(els)))
 mz = ground(*mid)
 if mz is None:  # layout center off the DEM: use the mean floor elevation instead

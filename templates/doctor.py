@@ -225,7 +225,7 @@ if PDIR and not designs:
         check("designs", True, "no design_*.json in %s" % PDIR)
 SAFE = re.compile(r"[A-Za-z0-9_-]+")
 MODES = ("balanced", "uphill")
-NEED = {"house": ("w_ft", "d_ft", "wall_h", "roof_pitch"), "terrace": ("w_m", "d_m")}
+NEED = {"house": ("w_ft", "d_ft", "wall_h", "roof_pitch"), "terrace": ("w_m", "d_m"), "drive": ("width_m",)}
 for dpath in designs:
     name = "design %s" % os.path.basename(dpath)
     try:
@@ -244,6 +244,9 @@ for dpath in designs:
         bad.append("frame.u_bearing_deg must be a number")
     if d.get("floor_mode") not in MODES:
         bad.append("floor_mode must be balanced or uphill")
+    for k in ("max_grade_pct", "reach_m"):
+        if k in d and not (num(d[k]) and d[k] > 0):
+            bad.append("%s must be a positive number" % k)
     els = d.get("elements")
     if not (isinstance(els, list) and els):
         bad.append("elements must be a non-empty list")
@@ -262,14 +265,34 @@ for dpath in designs:
         seen.add(eid)
         kind = el.get("kind")
         if kind not in NEED:
-            bad.append("%s: kind must be house or terrace" % tag)
-        for k in ("u", "v") + NEED.get(kind, ()):
+            bad.append("%s: kind must be house, terrace or drive" % tag)
+        for k in (() if kind == "drive" else ("u", "v")) + NEED.get(kind, ()):
             if not num(el.get(k)):
                 bad.append("%s: %s must be a number" % (tag, k))
         if "rot_deg" in el and not num(el["rot_deg"]):
             bad.append("%s: rot_deg must be a number" % tag)
         if "floor_mode" in el and el["floor_mode"] not in MODES:
             bad.append("%s: floor_mode must be balanced or uphill" % tag)
+        if kind == "drive":
+            pts = el.get("points")
+            if not (isinstance(pts, list) and len(pts) >= 2
+                    and all(isinstance(q, list) and len(q) == 2 and num(q[0]) and num(q[1]) for q in pts)):
+                bad.append("%s: points must be a list of at least two [u, v] pairs" % tag)
+            elif any(q == r for q, r in zip(pts, pts[1:])):
+                bad.append("%s: consecutive points repeat" % tag)
+            if num(el.get("width_m")) and el["width_m"] <= 0:
+                bad.append("%s: width_m must be positive" % tag)
+            if "max_grade_pct" in el and not (num(el["max_grade_pct"]) and el["max_grade_pct"] > 0):
+                bad.append("%s: max_grade_pct must be a positive number" % tag)
+        if kind == "house" and "steps" in el:
+            s = el["steps"]
+            if isinstance(s, int) and not isinstance(s, bool):
+                ok = s >= 2
+            else:
+                ok = (isinstance(s, list) and len(s) >= 2 and all(num(x) and x > 0 for x in s)
+                      and (not num(el.get("d_ft")) or abs(sum(s) - el["d_ft"]) < 1e-6))
+            if not ok:
+                bad.append("%s: steps must be an integer >= 2 or a list of pad depths in ft that sum to d_ft" % tag)
     check(name, not bad, "; ".join(bad) if bad else "%s, %d element(s)" % (d.get("name"), len(els)))
 
 print("[DONE] %d check(s) failed: %s" % (len(failed), failed) if failed else "[DONE] all checks OK")

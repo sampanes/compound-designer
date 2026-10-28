@@ -36,13 +36,13 @@ row above and adds access and stepped houses.
 Goal: one layout on a real hillside parcel that looks good in a render and answers "how do you
 get in?" Everything is still produced by `run_all.bat` from JSON; no hand edits in Blender.
 
-| Criterion | Done when |
-| --- | --- |
-| Attractive overview render | `place_masses.py` gives walls, roofs, and terrace paving distinct materials, adds sun and sky lighting, and scatters vegetation on the terrain outside the pads and drives. Free or procedural assets only. If an optional asset is missing, the run falls back to plain materials and still passes. |
-| Driveway and path element | A design element (for example `drive`) takes a polyline in `u`/`v` and a width, and is graded into the terrain as a ribbon. Stats report the length plus the mean and maximum grade, and flag segments steeper than a configurable `max_grade_pct` (default 15). |
-| Stepped houses | A `house` can sit on two or more pads at different floor levels (split-level), with per-pad stats, so a deep footprint on a steep slope does not need one tall foundation wall. |
-| A `design_v2` that uses all three | On a lot that falls away from the road: every house is reachable by a drive or path within `max_grade_pct`, or the stats say which one is not. |
-| Verified on a Blender machine | A row in Verified runs (see the workflow below). |
+| Criterion | Done when | State |
+| --- | --- | --- |
+| Attractive overview render | `place_masses.py` gives walls, roofs, and terrace paving distinct materials, adds sun and sky lighting, and scatters vegetation on the terrain outside the pads and drives. Free or procedural assets only. If an optional asset is missing, the run falls back to plain materials and still passes. | Not started |
+| Driveway and path element | A design element (for example `drive`) takes a polyline in `u`/`v` and a width, and is graded into the terrain as a ribbon. Stats report the length plus the mean and maximum grade, and flag segments steeper than a configurable `max_grade_pct` (default 15). | Built (`drive` kind; geometry in `design_geom.py` with tests); not yet verified on a Blender machine |
+| Stepped houses | A `house` can sit on two or more pads at different floor levels (split-level), with per-pad stats, so a deep footprint on a steep slope does not need one tall foundation wall. | Built (`steps` on a house); not yet verified on a Blender machine |
+| A `design_v2` that uses all three | On a lot that falls away from the road: every house is reachable by a drive or path within `max_grade_pct`, or the stats say which one is not. | `examples/design.example.json` has a split-level house, a drive and three paths; the render pass is still missing |
+| Verified on a Blender machine | A row in Verified runs (see the workflow below). | Pending |
 
 Not in scope: real driveway engineering (drainage, turning radii, retaining walls), interiors,
 and Godot.

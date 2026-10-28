@@ -29,8 +29,8 @@ JSON.
 | `blender/site_master.blend` | 1 m lidar terrain with the aerial image draped on it, an optional ~8 km low-res context terrain (horizons and views), the parcel boundary, neighbor lines, road centerlines, a 1.8 m person for scale, and top/oblique/eye-level cameras. |
 | `exports/site_stats.json` | area, elevation range, slope (at the DEM pixel size and 5 m smoothed), best-fit grade and which way the lot faces. |
 | `renders/cam_top.png`, `cam_oblique.png`, `cam_eye.png` | the bare site from above, from an oblique, and from eye level downhill of the lot looking back up the slope. |
-| `blender/<design>.blend` | one per layout `design_*.json`: the building masses on a graded copy of the terrain (pads cut to floor level). |
-| `exports/<design>_stats.json` | per-element stats (floor elevation, uphill cut, exposed foundation downhill, clearance to the boundary, which `floor_mode` was used) and overall building coverage. |
+| `blender/<design>.blend` | one per layout `design_*.json`: the building masses and drives on a graded copy of the terrain (pads cut to floor level, drives cut and filled to their grade line). |
+| `exports/<design>_stats.json` | per-element stats (floor elevation, uphill cut, exposed foundation downhill, clearance to the boundary, which `floor_mode` was used, per pad for a stepped house; length and grades for a drive, and which drive reaches each house) and overall building coverage. |
 | `renders/<design>_overview.png`, `_courtyard_eye.png`, `_from_road.png`, `_top.png` | the layout from downhill and off to one side, from the terrace looking out, from the road, and from above. |
 
 ## Requirements
@@ -123,18 +123,31 @@ A layout lives in a frame aligned with the lot: **u** runs along the road (`u_be
 compass bearing) and **v** runs perpendicular to it, into the lot (downhill on a lot that falls
 away from the road). The frame origin is the front corner with the smallest u.
 Elements:
-- `house`: `w_ft` x `d_ft` footprint, `wall_h`, `roof_pitch`.
+- `house`: `w_ft` x `d_ft` footprint, `wall_h`, `roof_pitch`. Add `steps` to split the depth into
+  pads at different floor levels (a split-level): `2` for two equal pads, or a list of pad depths in
+  feet that sum to `d_ft`, front (road side) first. Each pad takes its floor from the ground under
+  it, so a deep house on a steep slope steps down the hill instead of standing on one tall
+  foundation wall. The stats then carry a `pads` list.
 - `terrace`: `w_m` x `d_m`.
+- `drive`: a driveway or path. `points` is a polyline of `[u, v]` pairs and `width_m` its width. It
+  is graded into the terrain as a ribbon, level across and straight between points, so every point
+  is a change of grade. A point that lands on a house or terrace pad takes that pad's floor, which
+  is how a drive meets its house. Stats: length, the grade of each segment, the mean and maximum,
+  and the segments steeper than `max_grade_pct` (top-level, default 15; a drive can carry its own).
+  A segment over the limit is a `[CHECK] FAIL`. When a design has drives, each house's stats also
+  say which drive or path reaches it (comes within `reach_m`, default 3 m, of its walls) and the
+  design lists `unreached_houses`.
 
-Each has `u`, `v`, and `rot_deg`. The top-level `floor_mode` is the default for every element:
-`balanced` (mean ground under the footprint) or `uphill` (highest ground, no cut). An element can
-override it with its own `floor_mode` key, and the per-element stats record which was used.
-Duplicate element ids, an invalid `floor_mode`, or a footprint with no DEM under it stop the run
-with a `[CHECK] FAIL`.
+Houses and terraces have `u`, `v`, and `rot_deg`. The top-level `floor_mode` is the default for
+every pad: `balanced` (mean ground under the footprint) or `uphill` (highest ground, no cut). An
+element can override it with its own `floor_mode` key, and the per-element stats record which was
+used. Duplicate element ids, an invalid `floor_mode`, bad `steps`, or a footprint or drive point
+with no DEM under it stop the run with a `[CHECK] FAIL`.
 
 Every mass is one object (walls + roof + a deep foundation that the terrain hides), so you can
 move it by hand in Blender. The terrain grading, however, follows the JSON. Copy positions back
-into the JSON and re-run to re-grade.
+into the JSON and re-run to re-grade. Drives are objects too, but their cut and fill lives in the
+terrain copy, so move them in the JSON.
 
 ## Troubleshooting
 | Symptom | Cause and fix |
@@ -146,12 +159,18 @@ into the JSON and re-run to re-grade.
 | `DEM georef matches raster_bbox FAIL` | the GeoTIFF's own extent disagrees with `parcel.json`, usually after a bbox edit. Delete the `gis/` rasters and re-run `fetch_gis.py`. |
 | `parcel geojson FAIL ... look like lon/lat` | the parcel file is not in the projected CRS. Delete it and re-run `fetch_gis.py`, or re-export it from your GIS in that CRS. |
 | `<id> footprint on terrain FAIL` | the mass is off the DEM. `u` and `v` are meters from the lot's front corner; compare the design with `exports/site_stats.json`. |
+| `<id> on terrain FAIL` | a drive point is off the DEM; same cause as the footprint case. |
+| `<id> grade within 15% FAIL` | a segment of that drive is steeper than `max_grade_pct`; the detail names it. Add a point so the route runs across the slope, lengthen it, or raise the limit. |
 | the first raster read is slow, or fails offline | BlenderGIS downloads the FreeImage DLL for imageio once, and needs internet that one time. |
 
 ## Tests
-`python -m unittest discover -s tests -v` runs the network-free tests for `fetch_gis.py` (a faked
-`urlopen`, the real script), and CI runs the same command on every push. The Blender scripts have
-no automated tests; `doctor.py` and their `[CHECK]` lines are the safety net there.
+`python -m unittest discover -s tests -v` runs the network-free tests: `fetch_gis.py` against a
+faked `urlopen`, the footprint, ribbon and grade-line geometry in `design_geom.py` that
+`place_masses.py` uses, and `doctor.py`'s design validation. CI runs the same command on every
+push. The Blender scripts themselves have no automated tests; `doctor.py` and their `[CHECK]` lines
+are the safety net there, and
+[docs/roadmap.md](docs/roadmap.md#develop-anywhere-verify-on-a-blender-machine) says how a change
+gets verified on a Blender machine.
 
 ## Conventions and caveats
 - Real meters, no rescaling. Z is absolute elevation (NAVD88 meters for 3DEP).
