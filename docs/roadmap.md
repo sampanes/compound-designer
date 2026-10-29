@@ -59,8 +59,44 @@ python templates\doctor.py parcels\<parcel>
 templates\run_all.bat parcels\<parcel>
 ```
 
-Compare the regenerated `exports/*_stats.json` with the previous run. The diff must show only the
-fields the change meant to add or change. Look at the renders, then add a row to Verified runs.
+`place_masses.py` keeps the previous run's stats beside the new ones as
+`exports/<design>_stats.prev.json`. Diff the two for every design (`git diff --no-index` works on
+any two files): the diff must show only the fields the change meant to add or change. Look at the
+renders, then add a row to Verified runs.
+
+#### Verifying Milestone 2
+
+One run exercises all three code items. The existing `design_v1.json` (a copy of the
+pre-Milestone-2 example: three houses and a terrace) shows whether anything regressed; a copy of
+the current example as `design_v2.json` exercises the split-level house, the drive and the paths.
+
+```
+git pull
+copy examples\design.example.json parcels\<parcel>\design_v2.json
+python templates\doctor.py parcels\<parcel>
+templates\run_all.bat parcels\<parcel>
+```
+
+Then, in order:
+
+1. `git diff --no-index parcels\<parcel>\exports\design_v1_stats.prev.json parcels\<parcel>\exports\design_v1_stats.json`:
+   the only new field should be `vegetation` (tree count, density, seed, whether the aerial filter
+   was used). Every other number should be identical; anything else that moved is a regression.
+2. `design_v2_stats.json`: `main_house` has a `pads` list of two at different floors; each drive
+   has `length_m`, `mean_grade_pct`, `max_grade_pct`, `segments` and `reaches`; each house has
+   `access` or is listed in `unreached_houses`. A `<id> grade within 15% FAIL` is a finding about
+   the example's path on this lot, not a code failure: move the point or raise `max_grade_pct` in
+   `design_v2.json` and rerun `place_masses.bat` for that design.
+3. The log has no `render pass FAIL`. If it does, the traceback above it names the Blender call to
+   fix; the stats and `.blend` were still written.
+4. The renders (`renders\design_v2_*.png`), the guesses in order of likelihood: the sky is neither
+   washed out nor dim (the last argument of the `physical_sky(...)` call in `place_masses.py`,
+   0.25); the shadows fall away from the bright side of the sky (if not, the
+   `sun_rotation` line in `physical_sky` has the azimuth convention backwards: change it until the
+   sky agrees with the sun lamp, which is right); trees stand on the ground outside the pads and
+   drives in a plausible number (`vegetation.per_ha`); the split-level house steps down the hill
+   with a roof per pad; the drive reads as a ribbon that meets the house pad.
+5. Add a Verified-runs row and update the Milestone 2 State cells.
 
 ## Phase 1 -- Identify a real parcel
 

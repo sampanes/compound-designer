@@ -573,7 +573,12 @@ if RENDER:
         VEGETATION.hide_render = False
 scn.camera = cams["overview"]
 
-with open(p("exports/%s_stats.json" % name), "w") as f:
+stats_path = p("exports/%s_stats.json" % name)
+if os.path.exists(stats_path):  # keep the last run's stats so a code change can be diffed against them
+    prev = p("exports/%s_stats.prev.json" % name)
+    os.replace(stats_path, prev)
+    print("[INFO] previous stats kept at %s" % prev)
+with open(stats_path, "w") as f:
     json.dump(stats, f, indent=2)
 out = p("blender/%s.blend" % name)
 bpy.ops.wm.save_as_mainfile(filepath=out, relative_remap=True)

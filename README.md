@@ -30,7 +30,7 @@ JSON.
 | `exports/site_stats.json` | area, elevation range, slope (at the DEM pixel size and 5 m smoothed), best-fit grade and which way the lot faces. |
 | `renders/cam_top.png`, `cam_oblique.png`, `cam_eye.png` | the bare site from above, from an oblique, and from eye level downhill of the lot looking back up the slope. |
 | `blender/<design>.blend` | one per layout `design_*.json`: the building masses and drives on a graded copy of the terrain (pads cut to floor level, drives cut and filled to their grade line), with procedural materials, a physical sky, and simple trees scattered where the aerial is green. |
-| `exports/<design>_stats.json` | per-element stats (floor elevation, uphill cut, exposed foundation downhill, clearance to the boundary, which `floor_mode` was used, per pad for a stepped house; length and grades for a drive, and which drive reaches each house) and overall building coverage. |
+| `exports/<design>_stats.json` | per-element stats (floor elevation, uphill cut, exposed foundation downhill, clearance to the boundary, which `floor_mode` was used, per pad for a stepped house; length and grades for a drive, and which drive reaches each house) and overall building coverage. The previous run's file is kept beside it as `<design>_stats.prev.json`. |
 | `renders/<design>_overview.png`, `_courtyard_eye.png`, `_from_road.png`, `_top.png` | the layout from downhill and off to one side, from the terrace looking out, from the road, and from above. |
 
 ## Requirements
