@@ -103,7 +103,7 @@ Then, in order:
 
 Goal: on a lot that falls away from the road, the pipeline proposes a drive or path to each house
 that stays within `max_grade_pct`, or says plainly that none fits. Milestone 2's verification
-found that the hand-drawn example paths all ran straight downhill and were three to four times too
+found that the hand-drawn example paths all ran straight downhill and were two to four times too
 steep, and that the default frame bearing put a house across the parcel line.
 
 | Criterion | Done when | Where it can be built |
