@@ -21,8 +21,8 @@ Goal: a few accurately sized hypothetical houses on a real parcel with real terr
 
 Not required for milestone 1: detailed interiors, automatic layouts, Godot.
 
-**Next:** [Milestone 2](#milestone-2----a-steep-lot-compound-you-could-pitch). It closes the open
-row above and adds access and stepped houses.
+**Next:** [Milestone 3](#milestone-3----access-that-works-on-a-steep-lot). Milestone 2 is done and
+verified; its findings are what Milestone 3 fixes.
 
 ### Verified runs
 
@@ -98,6 +98,25 @@ Then, in order:
    drives in a plausible number (`vegetation.per_ha`); the split-level house steps down the hill
    with a roof per pad; the drive reads as a ribbon that meets the house pad.
 5. Add a Verified-runs row and update the Milestone 2 State cells.
+
+## Milestone 3 -- access that works on a steep lot
+
+Goal: on a lot that falls away from the road, the pipeline proposes a drive or path to each house
+that stays within `max_grade_pct`, or says plainly that none fits. Milestone 2's verification
+found that the hand-drawn example paths all ran straight downhill and were three to four times too
+steep, and that the default frame bearing put a house across the parcel line.
+
+| Criterion | Done when | Where it can be built |
+| --- | --- | --- |
+| Frame from the parcel | `"u_bearing_deg": "auto"` (and the default when the key is missing) derives the bearing from the parcel edge nearest the road centerlines, with the origin at that edge's end with the smaller u. `doctor.py` prints the derived bearing, and warns when any element's footprint falls outside the parcel in that frame. | Anywhere: pure geometry in `design_geom.py` with tests on synthetic parcels and roads. |
+| Grade-aware access | Each house's `access` records whether the drive or path that reaches it stays within `max_grade_pct` along the whole route from the road. The stats add `steep_access_houses` next to `unreached_houses`, and the `[INFO] access` line names both. | Anywhere: logic and tests; the Blender run only supplies the elevations. |
+| Switchback routing | A `drive` with `"to": "<house id>"` and no `points` is routed automatically: a least-cost path over the DEM grid (for example A* with grade-limited steps, preferring fewer turns) from the road frontage to that house's pad. It stays inside the parcel, off other pads, and within `max_grade_pct`. The chosen polyline goes into the stats in `u`/`v` so it can be copied into the JSON and edited. If no route fits, `<id> route FAIL` says why (for example, the steepest unavoidable step). | Anywhere: the router takes a 2-D elevation array, so the tests can use synthetic planes and ridges. Verify on a Blender machine with a real lot. |
+| Example uses it | `examples/design.example.json` routes its drive and paths with `"to"` instead of fixed points, so it works on any lot the frame fits. | Anywhere. |
+| Render helpers under test | The tree filter (pixel rule) and the compass-to-`sun_rotation` mapping move into `design_geom.py`, with tests that pin the arid-scrub case and the 90 - azimuth convention, so a refactor cannot quietly undo the Milestone 2 fixes. | Anywhere. |
+| Verified on a Blender machine | A row in Verified runs: `design_v1` regression, the example routed on a real steep lot, renders inspected. | Blender machine. |
+
+Not in scope: retaining walls, turning radii, drainage, and cut-and-fill volumes for the drive.
+Courtyard-camera framing and tree species are render polish for a later pass.
 
 ## Phase 1 -- Identify a real parcel
 
