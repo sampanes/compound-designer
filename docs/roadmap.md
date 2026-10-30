@@ -30,6 +30,7 @@ row above and adds access and stepped houses.
 | --- | --- | --- |
 | `build_site.py` and `place_masses.py` on one real parcel, headless, no GDAL | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f` (see [research-notes.md](research-notes.md#blendergis-on-blender-51)) |
 | Fresh folder from the README Quick start (four-key `parcel.json`, `doctor.py`, `run_all.bat`), end to end | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f`; derived bboxes matched a hand-made setup and every design stat came out identical |
+| Milestone 2 checklist: `design_v1` regression (only `vegetation` added to the stats), example `design_v2` with a split-level house, a drive and paths, renders inspected | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f` |
 
 ## Milestone 2 -- a steep-lot compound you could pitch
 
@@ -38,11 +39,11 @@ get in?" Everything is still produced by `run_all.bat` from JSON; no hand edits 
 
 | Criterion | Done when | State |
 | --- | --- | --- |
-| Attractive overview render | `place_masses.py` gives walls, roofs, and terrace paving distinct materials, adds sun and sky lighting, and scatters vegetation on the terrain outside the pads and drives. Free or procedural assets only. If an optional asset is missing, the run falls back to plain materials and still passes. | Built with procedural materials only (noise and brick nodes), a Nishita sky, and two simple tree shapes scattered where the aerial is green, outside pads and drives; a failure in the pass reports `render pass FAIL` and the run still writes its outputs. Not yet verified on a Blender machine; sky strength and the sun azimuth convention are the guesses to check |
-| Driveway and path element | A design element (for example `drive`) takes a polyline in `u`/`v` and a width, and is graded into the terrain as a ribbon. Stats report the length plus the mean and maximum grade, and flag segments steeper than a configurable `max_grade_pct` (default 15). | Built (`drive` kind; geometry in `design_geom.py` with tests); not yet verified on a Blender machine |
-| Stepped houses | A `house` can sit on two or more pads at different floor levels (split-level), with per-pad stats, so a deep footprint on a steep slope does not need one tall foundation wall. | Built (`steps` on a house); not yet verified on a Blender machine |
-| A `design_v2` that uses all three | On a lot that falls away from the road: every house is reachable by a drive or path within `max_grade_pct`, or the stats say which one is not. | `examples/design.example.json` has a split-level house, a drive and three paths, and the render pass runs on it (`vegetation` key); not yet verified on a Blender machine |
-| Verified on a Blender machine | A row in Verified runs (see the workflow below). | Pending |
+| Attractive overview render | `place_masses.py` gives walls, roofs, and terrace paving distinct materials, adds sun and sky lighting, and scatters vegetation on the terrain outside the pads and drives. Free or procedural assets only. If an optional asset is missing, the run falls back to plain materials and still passes. | Verified (Blender 5.1.1). Procedural materials (noise and brick nodes), a physical sky, and two simple tree shapes. Three fixes from the Blender run: the sky type (5.0 replaced `NISHITA`), the sky azimuth (was 180 deg off the sun lamp; checked by rendering the sky in eight directions), and the tree filter (arid scrub is never greener than it is red, so dark yellow-green pixels count too). Colors are converted from sRGB to linear so they no longer render washed out |
+| Driveway and path element | A design element (for example `drive`) takes a polyline in `u`/`v` and a width, and is graded into the terrain as a ribbon. Stats report the length plus the mean and maximum grade, and flag segments steeper than a configurable `max_grade_pct` (default 15). | Verified (Blender 5.1.1): ribbons graded into the terrain, per-segment grades, and `<id> grade within N% FAIL` on steep segments |
+| Stepped houses | A `house` can sit on two or more pads at different floor levels (split-level), with per-pad stats, so a deep footprint on a steep slope does not need one tall foundation wall. | Verified (Blender 5.1.1): two pads at different floors, a roof per pad, per-pad stats |
+| A `design_v2` that uses all three | On a lot that falls away from the road: every house is reachable by a drive or path within `max_grade_pct`, or the stats say which one is not. | The example runs on a real steep lot once `u_bearing_deg` is set to the lot's road; every path in it is too steep there, which the grade checks report. `unreached_houses` is geometric (no drive nearby), not grade-aware. A layout that actually solves access on a steep lot is design work, not code |
+| Verified on a Blender machine | A row in Verified runs (see the workflow below). | Done (see Verified runs) |
 
 Not in scope: real driveway engineering (drainage, turning radii, retaining walls), interiors,
 and Godot.

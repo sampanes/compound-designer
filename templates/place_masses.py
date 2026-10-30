@@ -408,8 +408,13 @@ VEG_DEFAULTS = {"per_ha": 40, "seed": 1, "min_h": 4.0, "max_h": 11.0, "clear_m":
 veg = design.get("vegetation", {})
 veg = {**VEG_DEFAULTS, **veg} if isinstance(veg, dict) else {**VEG_DEFAULTS, "per_ha": 0}  # null = no trees
 
+def lin(c):
+    # The colors here are picked as sRGB (what a color picker shows); shader sockets take linear values.
+    return tuple(x ** 2.2 for x in c[:3]) + tuple(c[3:])
+
 def texture(m, dark, light, scale, rough=None):
     # Base color from a noise field through a two-stop ramp, in object meters, so flat masses read as surfaces.
+    dark, light = lin(dark), lin(light)
     nt = m.node_tree
     bsdf = nt.nodes["Principled BSDF"]
     tc, noise, ramp = (nt.nodes.new(n) for n in ("ShaderNodeTexCoord", "ShaderNodeTexNoise", "ShaderNodeValToRGB"))
@@ -424,6 +429,7 @@ def texture(m, dark, light, scale, rough=None):
         bsdf.inputs["Roughness"].default_value = rough
 
 def pavers(m, brick, mortar):
+    brick, mortar = lin(brick), lin(mortar)
     nt = m.node_tree
     bsdf = nt.nodes["Principled BSDF"]
     tc, bt = nt.nodes.new("ShaderNodeTexCoord"), nt.nodes.new("ShaderNodeTexBrick")
@@ -436,16 +442,22 @@ def pavers(m, brick, mortar):
     nt.links.new(bt.outputs["Color"], bsdf.inputs["Base Color"])
 
 def physical_sky(world, elevation_deg, azimuth_deg, strength):
-    # Nishita sky without its sun disc (the sun lamp does the lighting); the sky fills the shadows and
-    # gives the horizon. sun_rotation 0 puts the sun at +Y (north) and grows counterclockwise, so a
-    # compass azimuth maps as 270 - azimuth. Unverified in Blender: if the bright side of the sky and
-    # the shadows disagree, this is the line to flip.
+    # Physical sky without its sun disc (the sun lamp does the lighting); the sky fills the shadows and
+    # gives the horizon. sun_rotation 0 puts the sun at +X (east) and grows counterclockwise, so a
+    # compass azimuth maps as 90 - azimuth (checked in Blender 5.1 by rendering the sky toward eight
+    # compass directions: the bright side faces the sun lamp).
     nt = world.node_tree
     sky = nt.nodes.new("ShaderNodeTexSky")
-    sky.sky_type = "NISHITA"
+    # Blender 5.0 replaced NISHITA with SINGLE_SCATTERING and MULTIPLE_SCATTERING.
+    for kind in ("MULTIPLE_SCATTERING", "SINGLE_SCATTERING", "NISHITA"):
+        try:
+            sky.sky_type = kind
+            break
+        except TypeError:
+            pass
     sky.sun_disc = False
     sky.sun_elevation = math.radians(elevation_deg)
-    sky.sun_rotation = math.radians(270 - azimuth_deg)
+    sky.sun_rotation = math.radians(90 - azimuth_deg)
     bg = nt.nodes["Background"]
     nt.links.new(sky.outputs["Color"], bg.inputs["Color"])
     bg.inputs["Strength"].default_value = strength
@@ -486,7 +498,7 @@ def aerial_pixels():
     return None
 
 def scatter_trees(per_ha, seed, hmin, hmax, clear):
-    """Trees where the aerial is green, outside every pad and drive (plus clear m), down on the terrain.
+    """Trees where the aerial shows vegetation, outside every pad and drive (plus clear m), down on the terrain.
     Returns (count, aerial filter used)."""
     rng = np.random.default_rng(seed)
     x0, y0, x1, y1 = cfg["raster_bbox"][0] - OX, cfg["raster_bbox"][1] - OY, cfg["raster_bbox"][2] - OX, cfg["raster_bbox"][3] - OY
@@ -506,7 +518,11 @@ def scatter_trees(per_ha, seed, hmin, hmax, clear):
         col = np.clip(((xs - x0) / (x1 - x0) * w).astype(int), 0, w - 1)
         row = np.clip(((ys - y0) / (y1 - y0) * h).astype(int), 0, h - 1)
         r, g, b = px[row, col, 0], px[row, col, 1], px[row, col, 2]
-        keep &= (g > r * 1.08) & (g > b * 1.08) & (g > 0.06)
+        # Green canopy, or (arid scrub, where green never beats red) darker than the scene and yellow
+        # rather than gray or blue, which leaves out asphalt and shadows.
+        lum = (r + g + b) / 3
+        dark = lum < 0.8 * float(np.median(px[::4, ::4, :3].mean(axis=2)))
+        keep &= ((g > r * 1.08) & (g > b * 1.08) & (g > 0.06)) | (dark & (g > b * 1.2))
     for cx, cy, rot, w, d, pads in pad_table.values():
         c, s = math.cos(-rot), math.sin(-rot)
         lx, ly = (xs - cx) * c - (ys - cy) * s, (xs - cx) * s + (ys - cy) * c
@@ -545,7 +561,7 @@ try:
         physical_sky(scn.world, 32, 225, 0.25)  # matches the sun lamp: 32 deg up, in the SW
     trees, used_aerial = scatter_trees(veg["per_ha"], veg["seed"], veg["min_h"], veg["max_h"], veg["clear_m"])
     stats["vegetation"] = {"trees": trees, "per_ha": veg["per_ha"], "seed": veg["seed"], "aerial_filter": used_aerial}
-    check("render pass", True, "%d trees (%s), materials, sky" % (trees, "where the aerial is green" if used_aerial else "aerial not readable: uniform"))
+    check("render pass", True, "%d trees (%s), materials, sky" % (trees, "where the aerial shows vegetation" if used_aerial else "aerial not readable: uniform"))
 except Exception as e:  # cosmetic: report, keep going, so the stats and the .blend are still written
     import traceback
     traceback.print_exc()
