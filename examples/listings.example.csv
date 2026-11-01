@@ -1,0 +1,5 @@
+name,listing,acres,apn,layer,id_field
+vacant_lot,https://www.zillow.com/homedetails/000-Quiet-Hawk-Trl-%23--Anytown-CO-80000/1_zpid/,3.0,,,
+house_on_acreage,"12 Quiet Hawk Trl, Anytown, CO 80000",,,,
+known_apn,https://www.redfin.com/CO/Anytown/0-Quiet-Hawk-Trl-80000/home/555,,123-45-067,,
+pinned_layer,"0 Quiet Hawk Trl, Anytown, CO",3.0,,https://gis.example.com/arcgis/rest/services/Parcels/FeatureServer/0,APN

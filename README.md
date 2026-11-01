@@ -18,6 +18,8 @@ re-run after you edit a config.
 - [docs/data-prep.md](docs/data-prep.md) -- preparing inputs in ArcGIS Pro or QGIS instead of `fetch_gis.py`.
 - [docs/research-notes.md](docs/research-notes.md) -- BlenderGIS on Blender 5.1, public data
   sources, finding a parcel, steep-lot lessons.
+- [docs/scouting.md](docs/scouting.md) -- `scout_parcel.py`: from a listing link to its parcel and a
+  triage report (terrain, flood, streams, roads, zoning), one listing or hundreds.
 
 ## What you get per parcel
 Everything lands in subfolders of the parcel folder. `<design>` is the `name` field of a design
@@ -43,6 +45,16 @@ JSON.
   TIGERweb roads. The parcel layer can be any ArcGIS REST layer that has an ID field.
 - The `.bat` wrappers are for Windows cmd. On other platforms, run the same `blender -b ...`
   command they contain.
+
+## Scouting first
+Not sure the lot is worth it yet, or have a pile of listings? `scout_parcel.py` finds the parcel
+behind a listing link (vacant lots included) and reports size, grade, flood zones, streams, road
+access, and zoning in seconds, then `init` writes the `parcel.json` below for the lots that make the
+cut. It only needs Python. See [docs/scouting.md](docs/scouting.md).
+```
+python templates\scout_parcel.py listing "<listing URL or address>" --acres 3.0
+python templates\scout_parcel.py init parcels\my_parcel --layer <parcel layer URL> --id <APN>
+```
 
 ## Quick start
 ```
@@ -173,7 +185,8 @@ terrain copy, so move them in the JSON.
 ## Tests
 `python -m unittest discover -s tests -v` runs the network-free tests: `fetch_gis.py` against a
 faked `urlopen`, the footprint, ribbon and grade-line geometry in `design_geom.py` that
-`place_masses.py` uses, and `doctor.py`'s design validation. CI runs the same command on every
+`place_masses.py` uses, `doctor.py`'s design validation, and `scout_parcel.py` end to end against
+faked parcel, geocoding, elevation, flood, stream, road, and zoning services. CI runs the same command on every
 push. The Blender scripts themselves have no automated tests; `doctor.py` and their `[CHECK]` lines
 are the safety net there, and
 [docs/roadmap.md](docs/roadmap.md#develop-anywhere-verify-on-a-blender-machine) says how a change

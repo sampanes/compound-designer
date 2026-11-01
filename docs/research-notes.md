@@ -42,8 +42,11 @@ the first four.
 | Aerial imagery | USGS `USGSNAIPPlus/ImageServer/exportImage` | NAIP, public domain. Request the same bbox and CRS as the DEM. |
 | Roads | Census TIGERweb `Transportation/MapServer/8` | Local road centerlines. Approximate. |
 | Parcels | County or state ArcGIS REST parcel layers | Varies by county. Assessor lines, not surveys. |
-| Flood zones | FEMA National Flood Hazard Layer (NFHL) | Not yet wired in. |
-| Streams | USGS NHD / NHDPlus | Not yet wired in. |
+| Flood zones | FEMA flood zones: Esri's public `USA_Flood_Hazard_Areas` mirror, FEMA NFHL `MapServer/28` as fallback | Used by `scout_parcel.py`. FEMA's own server resets connections from some networks; the mirror has the same fields. |
+| Streams | USGS NHD `nhd/MapServer/6` (large-scale flowlines) | Used by `scout_parcel.py`. `fcode` 46006 perennial, 46003 intermittent, 46007 ephemeral. |
+| Elevation samples | 3DEP `ImageServer/getSamples` | A multipoint of about 900 points returns elevations without a raster download; `scout_parcel.py` derives grade statistics from it. |
+| County at a point | Census geocoder `geographies/coordinates` with `layers=Counties` | Name, state FIPS, and GEOID. |
+| Parcel and zoning layers | ArcGIS Online `sharing/rest/search` | Many counties publish hosted copies there even when their own GIS server blocks scripts. |
 
 The `exportImage` endpoint is the easy way to get a small clipped DEM without downloading
 whole 1 m tiles: give it a bbox, an output CRS, and a pixel size. Example shape:
@@ -58,6 +61,9 @@ To see which lidar project (and year) covers a point, call `identify` on the sam
 with `returnCatalogItems=true`.
 
 ## Finding the parcel
+
+`scout_parcel.py` automates everything below; [scouting.md](scouting.md) describes how it matches
+a listing to a parcel and what it learned along the way.
 
 - A vacant lot often has **no situs address** in assessor data, and a geocoder won't find it. A
   listing's "address" number is sometimes the tail of the APN. Search the parcel layer for the

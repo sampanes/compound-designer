@@ -31,6 +31,7 @@ verified; its findings are what Milestone 3 fixes.
 | `build_site.py` and `place_masses.py` on one real parcel, headless, no GDAL | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f` (see [research-notes.md](research-notes.md#blendergis-on-blender-51)) |
 | Fresh folder from the README Quick start (four-key `parcel.json`, `doctor.py`, `run_all.bat`), end to end | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f`; derived bboxes matched a hand-made setup and every design stat came out identical |
 | Milestone 2 checklist: `design_v1` regression (only `vegetation` added to the stats), example `design_v2` with a split-level house, a drive and paths, renders inspected | 2026-10 | Blender 5.1.1, BlenderGIS commit `2add45f` |
+| `scout_parcel.py` on real listings in two counties: a vacant lot from a share link plus acreage, and a lot whose listing number was its APN tail; both matched the hand-found APNs, and the scout's median grade matched `build_site.py`'s to 0.1% | 2026-10 | Python 3.11, no Blender |
 
 ## Milestone 2 -- a steep-lot compound you could pitch
 
@@ -113,7 +114,8 @@ steep, and that the default frame bearing put a house across the parcel line.
 | Switchback routing | A `drive` with `"to": "<house id>"` and no `points` is routed automatically: a least-cost path over the DEM grid (for example A* with grade-limited steps, preferring fewer turns) from the road frontage to that house's pad. It stays inside the parcel, off other pads, and within `max_grade_pct`. The chosen polyline goes into the stats in `u`/`v` so it can be copied into the JSON and edited. If no route fits, `<id> route FAIL` says why (for example, the steepest unavoidable step). | Anywhere: the router takes a 2-D elevation array, so the tests can use synthetic planes and ridges. Verify on a Blender machine with a real lot. |
 | Example uses it | `examples/design.example.json` routes its drive and paths with `"to"` instead of fixed points, so it works on any lot the frame fits. | Anywhere. |
 | Render helpers under test | The tree filter (pixel rule) and the compass-to-`sun_rotation` mapping move into `design_geom.py`, with tests that pin the arid-scrub case and the 90 - azimuth convention, so a refactor cannot quietly undo the Milestone 2 fixes. | Anywhere. |
-| Verified on a Blender machine | A row in Verified runs: `design_v1` regression, the example routed on a real steep lot, renders inspected. | Blender machine. |
+| Creek and flood overlays | `fetch_gis.py` also downloads NHD flowlines and FEMA flood polygons (the same services `scout_parcel.py` uses) for the raster bbox. `build_site.py` drapes them like the roads (blue for streams, translucent hatched polygons for SFHA and floodway). `place_masses.py` reports each pad's overlap with the SFHA and floodway, and fails a pad inside a floodway. | Anywhere for the fetch, stats and tests; the drape needs a Blender machine. |
+| Verified on a Blender machine | A row in Verified runs: `design_v1` regression, the example routed on a real steep lot, a creek lot with its flood overlay, renders inspected. | Blender machine. |
 
 Not in scope: retaining walls, turning radii, drainage, and cut-and-fill volumes for the drive.
 Courtyard-camera framing and tree species are render polish for a later pass.
