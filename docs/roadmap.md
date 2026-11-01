@@ -21,8 +21,9 @@ Goal: a few accurately sized hypothetical houses on a real parcel with real terr
 
 Not required for milestone 1: detailed interiors, automatic layouts, Godot.
 
-**Next:** [Milestone 3](#milestone-3----access-that-works-on-a-steep-lot). Milestone 2 is done and
-verified; its findings are what Milestone 3 fixes.
+**Next:** [Milestone 3](#milestone-3----access-that-works-on-a-steep-lot). The Milestone 2 feature
+set was exercised in Blender; follow-up acceptance findings are tracked in
+[development-handoff.md](development-handoff.md), and its layout findings feed Milestone 3.
 
 ### Verified runs
 
@@ -41,7 +42,7 @@ get in?" Everything is still produced by `run_all.bat` from JSON; no hand edits 
 | Criterion | Done when | State |
 | --- | --- | --- |
 | Attractive overview render | `place_masses.py` gives walls, roofs, and terrace paving distinct materials, adds sun and sky lighting, and scatters vegetation on the terrain outside the pads and drives. Free or procedural assets only. If an optional asset is missing, the run falls back to plain materials and still passes. | Verified (Blender 5.1.1). Procedural materials (noise and brick nodes), a physical sky, and two simple tree shapes. Three fixes from the Blender run: the sky type (5.0 replaced `NISHITA`), the sky azimuth (was 180 deg off the sun lamp; checked by rendering the sky in eight directions), and the tree filter (arid scrub is never greener than it is red, so dark yellow-green pixels count too). Colors are converted from sRGB to linear so they no longer render washed out |
-| Driveway and path element | A design element (for example `drive`) takes a polyline in `u`/`v` and a width, and is graded into the terrain as a ribbon. Stats report the length plus the mean and maximum grade, and flag segments steeper than a configurable `max_grade_pct` (default 15). | Verified (Blender 5.1.1): ribbons graded into the terrain, per-segment grades, and `<id> grade within N% FAIL` on steep segments |
+| Driveway and path element | A design element (for example `drive`) takes a polyline in `u`/`v` and a width, and is graded into the terrain as a ribbon. Stats report the length plus the mean and maximum grade, and flag segments steeper than a configurable `max_grade_pct` (default 15). | Partially verified (Blender 5.1.1): centerline grading, per-segment grades, and `<id> grade within N% FAIL` on steep segments passed. Terrain support beneath outside miter corners remains open as CD-001 in [development-handoff.md](development-handoff.md) |
 | Stepped houses | A `house` can sit on two or more pads at different floor levels (split-level), with per-pad stats, so a deep footprint on a steep slope does not need one tall foundation wall. | Verified (Blender 5.1.1): two pads at different floors, a roof per pad, per-pad stats |
 | A `design_v2` that uses all three | On a lot that falls away from the road: every house is reachable by a drive or path within `max_grade_pct`, or the stats say which one is not. | The example runs on a real steep lot once `u_bearing_deg` is set to the lot's road; every path in it is too steep there, which the grade checks report. `unreached_houses` is geometric (no drive nearby), not grade-aware. A layout that actually solves access on a steep lot is design work, not code |
 | Verified on a Blender machine | A row in Verified runs (see the workflow below). | Done (see Verified runs) |
@@ -54,6 +55,9 @@ and Godot.
 Code can be written on a machine without Blender or a parcel. `fetch_gis.py` changes go with
 tests in `tests/`, which CI runs. The Blender scripts are verified on a machine that has Blender,
 BlenderGIS, and at least one parcel folder:
+
+Active cross-machine findings, privacy boundaries, and the contributor-to-acceptance contract are
+tracked in [development-handoff.md](development-handoff.md).
 
 ```
 git pull
@@ -70,11 +74,13 @@ renders, then add a row to Verified runs.
 
 One run exercises all three code items. The existing `design_v1.json` (a copy of the
 pre-Milestone-2 example: three houses and a terrace) shows whether anything regressed; a copy of
-the current example as `design_v2.json` exercises the split-level house, the drive and the paths.
+the current example as `design_v2.json`, with its internal `name` changed to `design_v2`, exercises
+the split-level house, the drive and the paths.
 
 ```
 git pull
 copy examples\design.example.json parcels\<parcel>\design_v2.json
+rem Edit design_v2.json and set "name" to "design_v2" before continuing.
 python templates\doctor.py parcels\<parcel>
 templates\run_all.bat parcels\<parcel>
 ```

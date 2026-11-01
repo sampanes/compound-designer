@@ -20,6 +20,8 @@ re-run after you edit a config.
   sources, finding a parcel, steep-lot lessons.
 - [docs/scouting.md](docs/scouting.md) -- `scout_parcel.py`: from a listing link to its parcel and a
   triage report (terrain, flood, streams, roads, zoning), one listing or hundreds.
+- [docs/development-handoff.md](docs/development-handoff.md) -- active cross-machine findings and
+  the contributor-to-Blender acceptance workflow.
 
 ## What you get per parcel
 Everything lands in subfolders of the parcel folder. `<design>` is the `name` field of a design
@@ -67,9 +69,10 @@ python templates\doctor.py parcels\my_parcel
 templates\run_all.bat parcels\my_parcel
 ```
 `doctor.py` finds Blender, probes it once headless (version, numpy, BlenderGIS, EEVEE, the
-FreeImage DLL), and validates `parcel.json` and every `design_*.json`, so anything missing shows
-up before the slow steps. `run_all.bat` then runs the three steps in order and stops at the first
-failure. They are the same three commands you can run by hand:
+FreeImage DLL), and validates `parcel.json` and every `design_*.json`, reporting known preflight
+problems before the slow steps. Full execution remains authoritative. `run_all.bat` then runs the
+three steps in order and stops at the first failure. They are the same three commands you can run
+by hand:
 ```
 python templates\fetch_gis.py parcels\my_parcel
 templates\build_site.bat parcels\my_parcel
@@ -190,7 +193,8 @@ faked parcel, geocoding, elevation, flood, stream, road, and zoning services. CI
 push. The Blender scripts themselves have no automated tests; `doctor.py` and their `[CHECK]` lines
 are the safety net there, and
 [docs/roadmap.md](docs/roadmap.md#develop-anywhere-verify-on-a-blender-machine) says how a change
-gets verified on a Blender machine.
+gets verified on a Blender machine. The active findings and exact handoff contract are in
+[docs/development-handoff.md](docs/development-handoff.md).
 
 ## Conventions and caveats
 - Real meters, no rescaling. Z is absolute elevation (NAVD88 meters for 3DEP).
