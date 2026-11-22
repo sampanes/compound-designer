@@ -50,9 +50,9 @@ The acceptance runner validates the handed-off commit without publishing its par
 
 ## Findings
 
-The findings were rechecked from base revision `21c550f`. Statuses include the changes in this
-update. Acceptance described as local used a private fixture without publishing it; repeat those
-checks at the published commit before treating a cross-machine handoff as final.
+The findings were rechecked from base revision `21c550f`. The code changes were accepted at
+`32ad2b0` with Blender 5.1.1 on 2026-11-22; this handoff-only status update does not alter the
+tested code. Acceptance used a private fixture without publishing it.
 
 ### CD-001: the visible ribbon and graded footprint diverge at mitered turns
 
@@ -80,7 +80,7 @@ Blender acceptance:
 
 ### CD-002: design filenames do not guarantee distinct output names
 
-Status: **Engineering complete; local Blender acceptance passed; repeat at the published commit.**
+Status: **Resolved at `32ad2b0` -- engineering and Blender acceptance passed.**
 
 Output stems come from the design JSON's `name`, not its filename. Copying and renaming a JSON file
 does not change that internal name. The Milestone 2 instructions now call this out explicitly, but
@@ -100,7 +100,7 @@ Blender acceptance:
 - Run at least two designs in one parcel folder and confirm each keeps its own `.blend`, complete
   render set, current stats, and previous stats after a rerun.
 
-Local acceptance on 2026-11-22 used two designs with distinct internal names. Each retained a
+Acceptance at `32ad2b0` used two designs with distinct internal names. Each retained a
 separate `.blend`, four renders, current stats, and previous stats after a rerun. The site and both
 design scenes reopened headlessly with every file image relative and resolvable and with no linked
 libraries. Synthetic tests also pin case-insensitive duplicate rejection through explicit-file and
@@ -108,7 +108,7 @@ parcel-folder preflight paths.
 
 ### CD-003: `doctor.py` runtime-precondition parity
 
-Status: **Engineering complete; local workflow smoke passed; repeat at the published commit.**
+Status: **Resolved at `32ad2b0` -- engineering and Blender workflow acceptance passed.**
 
 Gaps in the base revision:
 
@@ -139,11 +139,11 @@ Blender acceptance:
 The validator now applies vegetation defaults before comparing bounds; requires a house or
 terrace; rejects non-finite values, non-positive physical dimensions, non-string IDs, and route
 geometry that cannot form a simple ribbon; and continues to allow signed positions and angles plus
-separated switchbacks. Local preflight passed 14 checks with no failures, and one supported design
-completed an isolated `run_all.bat --no-render` workflow with three steps and no failed checks. The
-second local design still reports its already-known over-grade hand-drawn paths; it produced a
-complete output set and is not counted as a pipeline regression. All 11 fresh renders were
-inspected; some eye-level framing remains later render polish.
+separated switchbacks. At `32ad2b0`, preflight passed 14 checks with no failures, and one supported
+design completed an isolated `run_all.bat --no-render` workflow with three steps and no failed
+checks. The second local design still reports its already-known over-grade hand-drawn paths; it
+produced a complete output set and is not counted as a pipeline regression. All 11 fresh renders
+were inspected; some eye-level framing remains later render polish.
 
 ### CD-004: design-validator process and cleanup coverage
 
