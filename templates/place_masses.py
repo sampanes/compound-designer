@@ -17,7 +17,7 @@ from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # design_geom.py sits next to this script
-from design_geom import footprint_vs_parcel, polyline_to_polygon_distance, offsets, profile, split_depths
+from design_geom import checked_offsets, footprint_vs_parcel, polyline_to_polygon_distance, profile, split_depths
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 PDIR, DESIGN = os.path.abspath(argv[0]), os.path.abspath(argv[1])
@@ -245,7 +245,7 @@ for el in drives:
             fatal("%s on terrain" % el["id"], "point (u %g, v %g) is off the DEM; check it against raster_bbox" % tuple(uv))
         zs.append(z)
     try:
-        edges = offsets(pts, width)
+        edges = checked_offsets(pts, width)
         prof = profile(pts, zs, limit)
     except ValueError as e:
         fatal("%s points" % el["id"], str(e))

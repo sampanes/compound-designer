@@ -84,6 +84,73 @@ def offsets(pts, width):
     return out
 
 
+def _segments_meet(a, b, c, d):
+    """True when closed segments ab and cd cross, touch or overlap."""
+    def orient(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    def on_segment(p, q, r):
+        return (min(p[0], r[0]) <= q[0] <= max(p[0], r[0])
+                and min(p[1], r[1]) <= q[1] <= max(p[1], r[1]))
+    o1, o2, o3, o4 = orient(a, b, c), orient(a, b, d), orient(c, d, a), orient(c, d, b)
+    if (o1 > 0) != (o2 > 0) and (o3 > 0) != (o4 > 0):
+        return True
+    return ((o1 == 0 and on_segment(a, c, b)) or (o2 == 0 and on_segment(a, d, b))
+            or (o3 == 0 and on_segment(c, a, d)) or (o4 == 0 and on_segment(c, b, d)))
+
+
+def _finite_number(value):
+    try:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def checked_offsets(pts, width):
+    """Validated ribbon offsets for an open polyline.
+
+    Rejects non-finite inputs, crossing centerlines and any segment whose mitered quad folds or
+    crosses itself. It intentionally imposes no turning-radius policy: separated switchbacks are
+    valid, while geometry that cannot make the quad faces used by Blender is not.
+    """
+    if not (_finite_number(width) and width > 0):
+        raise ValueError("width must be a finite positive number")
+    if not (isinstance(pts, (list, tuple)) and all(
+            isinstance(q, (list, tuple)) and len(q) == 2
+            and all(_finite_number(v) for v in q)
+            for q in pts)):
+        raise ValueError("points must be finite [x, y] pairs")
+    try:
+        edges = offsets(pts, width)  # also enforces the existing 1e-9 m segment threshold
+    except (OverflowError, ZeroDivisionError) as e:
+        raise ValueError("ribbon geometry overflowed") from e
+    if not all(_finite_number(v) for pair in edges for point in pair for v in point):
+        raise ValueError("ribbon geometry overflowed")
+    segments = list(zip(pts, pts[1:]))
+    for i, (a, b) in enumerate(segments):
+        for j in range(i + 2, len(segments)):
+            c, d = segments[j]
+            if _segments_meet(a, b, c, d):
+                raise ValueError("centerline segments %d and %d cross, touch or overlap" % (i, j))
+    for i, ((l0, r0), (l1, r1)) in enumerate(zip(edges, edges[1:])):
+        face = (l0, r0, r1, l1)
+        area2 = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(face, face[1:] + face[:1]))
+        if area2 <= 0 or _segments_meet(l0, r0, r1, l1) or _segments_meet(r0, r1, l1, l0):
+            raise ValueError("segment %d creates a folded ribbon face" % i)
+    # The individual quads can all be valid while a later one loops back over an earlier one.
+    # A valid open ribbon has one simple outer boundary: left side forward, end cap, right side
+    # backward, start cap. Non-neighboring boundary edges may not cross, touch or overlap.
+    left, right = [pair[0] for pair in edges], [pair[1] for pair in edges]
+    boundary = left + list(reversed(right)) + [left[0]]
+    boundary_segments = list(zip(boundary, boundary[1:]))
+    for i, (a, b) in enumerate(boundary_segments):
+        for j in range(i + 1, len(boundary_segments)):
+            if j == i + 1 or (i == 0 and j == len(boundary_segments) - 1):
+                continue
+            if _segments_meet(a, b, *boundary_segments[j]):
+                raise ValueError("ribbon boundary crosses, touches or overlaps itself")
+    return edges
+
+
 def profile(pts, zs, max_grade_pct):
     """Grade line of a polyline whose vertices sit at elevations zs: per-segment length, rise and
     grade (signed, positive climbs in the direction of travel), plus totals and which segments are

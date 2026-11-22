@@ -74,6 +74,42 @@ class Ribbons(unittest.TestCase):
         with self.assertRaises(ValueError):
             g.offsets([(0, 0), (0, 0), (5, 0)], 2)
 
+    def test_checked_ribbons_allow_turns_and_switchbacks(self):
+        routes = [
+            ([(0, 0), (10, 0)], 4),
+            ([(0, 0), (10, 0), (10, 10)], 4),
+            ([(0, 0), (10, 0), (10, -10)], 4),
+            ([(0, 0), (10, 0), (10, 10), (20, 10)], 2),
+            ([(0, 0), (10, 0), (10, 5), (0, 5)], 2),
+        ]
+        for points, width in routes:
+            with self.subTest(points=points):
+                self.assertEqual(len(g.checked_offsets(points, width)), len(points))
+
+    def test_checked_ribbons_reject_geometry_that_cannot_make_faces(self):
+        bad = [
+            ([(0, 0), (1e-10, 0)], 2),                       # below the runtime segment threshold
+            ([(0, 0), (10, 0), (0, 0)], 2),                 # exact reversal
+            ([(0, 0), (10, 0), (0, 0.01)], 2),              # overlapping near reversal
+            ([(0, 0), (0.5, 0), (0.5, 5)], 2),              # short turn folds a quad
+            ([(0, 0), (10, 10), (0, 10), (10, 0)], 2),      # crossing centerline
+            ([(0, 0), (10, 0), (10, 10), (0, 10), (0, 0.5)], 2),  # tight U-turn overlap
+        ]
+        for points, width in bad:
+            with self.subTest(points=points):
+                with self.assertRaises(ValueError):
+                    g.checked_offsets(points, width)
+
+    def test_checked_ribbons_reject_invalid_widths_and_numeric_overflow(self):
+        for width in (0, -1, float("nan"), float("inf"), True, "2"):
+            with self.subTest(width=width):
+                with self.assertRaises(ValueError):
+                    g.checked_offsets([(0, 0), (10, 0)], width)
+        for points in ([1e308, 0], [-1e308, 0]), ([0, 0], [10 ** 10000, 0]):
+            with self.subTest(points=points):
+                with self.assertRaises(ValueError):
+                    g.checked_offsets(points, 2)
+
 
 class Profiles(unittest.TestCase):
     def test_grades_lengths_and_flags(self):

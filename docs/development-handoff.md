@@ -48,10 +48,11 @@ The acceptance runner validates the handed-off commit without publishing its par
 6. Mark an item accepted only after both its engineering and Blender criteria pass. Record the
    tested commit and Blender version in the public result.
 
-## Current findings
+## Findings
 
-The findings below were still present when checked at `466d659`. Recheck the code before starting
-work in case a later commit already addresses one.
+The findings were rechecked from base revision `21c550f`. Statuses include the changes in this
+update. Acceptance described as local used a private fixture without publishing it; repeat those
+checks at the published commit before treating a cross-machine handoff as final.
 
 ### CD-001: the visible ribbon and graded footprint diverge at mitered turns
 
@@ -79,7 +80,7 @@ Blender acceptance:
 
 ### CD-002: design filenames do not guarantee distinct output names
 
-Status: **Open -- validation fix required; the copy workflow is now documented.**
+Status: **Engineering complete; local Blender acceptance passed; repeat at the published commit.**
 
 Output stems come from the design JSON's `name`, not its filename. Copying and renaming a JSON file
 does not change that internal name. The Milestone 2 instructions now call this out explicitly, but
@@ -99,11 +100,17 @@ Blender acceptance:
 - Run at least two designs in one parcel folder and confirm each keeps its own `.blend`, complete
   render set, current stats, and previous stats after a rerun.
 
-### CD-003: `doctor.py` does not yet match all runtime preconditions
+Local acceptance on 2026-11-22 used two designs with distinct internal names. Each retained a
+separate `.blend`, four renders, current stats, and previous stats after a rerun. The site and both
+design scenes reopened headlessly with every file image relative and resolvable and with no linked
+libraries. Synthetic tests also pin case-insensitive duplicate rejection through explicit-file and
+parcel-folder preflight paths.
 
-Status: **Open -- pure-Python validation work, followed by one workflow smoke test.**
+### CD-003: `doctor.py` runtime-precondition parity
 
-Known gaps:
+Status: **Engineering complete; local workflow smoke passed; repeat at the published commit.**
+
+Gaps in the base revision:
 
 - Vegetation bounds are compared only when both `min_h` and `max_h` are explicit; runtime defaults
   can still make the effective minimum exceed the effective maximum.
@@ -129,16 +136,29 @@ Blender acceptance:
 - Run one valid design through `run_all.bat` to ensure the stricter validator did not reject the
   supported workflow.
 
-### CD-004: design-validator tests hide process and cleanup failures
+The validator now applies vegetation defaults before comparing bounds; requires a house or
+terrace; rejects non-finite values, non-positive physical dimensions, non-string IDs, and route
+geometry that cannot form a simple ribbon; and continues to allow signed positions and angles plus
+separated switchbacks. Local preflight passed 14 checks with no failures, and one supported design
+completed an isolated `run_all.bat --no-render` workflow with three steps and no failed checks. The
+second local design still reports its already-known over-grade hand-drawn paths; it produced a
+complete output set and is not counted as a pipeline regression. All 11 fresh renders were
+inspected; some eye-level framing remains later render polish.
 
-Status: **Open -- low priority test-harness cleanup.**
+### CD-004: design-validator process and cleanup coverage
 
-The design-validator tests inspect a selected stdout line but do not assert the subprocess return
-code or include stderr when they fail. Their temporary directories also outlive normal test runs.
-Factor design validation into a pure function or add a design-only mode, use managed temporary
-directories, assert the intended process semantics, and make failures show stdout and stderr
-without printing private environment data. Do not require a zero exit from a test that intentionally
-runs without Blender.
+Status: **Resolved in this update.**
+
+In the base revision, the design-validator tests inspected a selected stdout line but did not
+assert the subprocess return code or include stderr when they failed. Their temporary directories
+also outlived normal test runs. The acceptance target was a pure validation function or design-only
+mode, managed temporary directories, explicit process semantics, and failures that show stdout and
+stderr without printing private environment data.
+
+`doctor.py --design-only` now gives design validation independent process semantics. The tests use
+managed temporary directories, assert exit code plus stdout and stderr, cover multiple explicit
+files and ordinary parcel-folder discovery, and leave no test directories after normal runs. The
+70-test suite passes on Python 3.8, 3.10, 3.11, and 3.13.
 
 ## Already resolved; do not reopen without contrary evidence
 

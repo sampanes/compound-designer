@@ -2,12 +2,16 @@
 # FreeImage DLL), then validates a parcel folder (parcel.json, GIS inputs) and design JSONs, so every
 # missing piece shows up in one run before the slow steps. Plain Python 3 stdlib; never imports bpy.
 # Usage: python doctor.py [PARCEL_DIR] [DESIGN.json ...]
+#        python doctor.py --design-only DESIGN.json [DESIGN.json ...]
 #   No arguments: environment only. With PARCEL_DIR and no designs, every design_*.json in it is checked.
 # Blender is BLENDER if set, else the default 5.1 install, else the newest "Blender Foundation\Blender *"
 # folder, else `blender` on PATH. Prints [CHECK] OK/FAIL lines and exits 1 if any check fails.
-import glob, json, os, re, shutil, subprocess, sys
+import glob, json, math, os, re, shutil, subprocess, sys
 
-USAGE = "usage: python doctor.py [PARCEL_DIR] [DESIGN.json ...]"
+from design_geom import checked_offsets
+
+USAGE = ("usage: python doctor.py [PARCEL_DIR] [DESIGN.json ...]\n"
+         "       python doctor.py --design-only DESIGN.json [DESIGN.json ...]")
 failed = []
 
 def check(name, ok, detail=""):
@@ -16,12 +20,20 @@ def check(name, ok, detail=""):
         failed.append(name)
 
 def num(x):
-    return isinstance(x, (int, float)) and not isinstance(x, bool)
+    try:
+        return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+    except OverflowError:  # an integer too large to convert to a finite float
+        return False
 
 args = sys.argv[1:]
 if any(a in ("-h", "--help") for a in args):
     print(USAGE, file=sys.stderr)
     sys.exit(2)
+if args.count("--design-only") > 1:
+    print(USAGE, file=sys.stderr)
+    sys.exit(2)
+DESIGN_ONLY = "--design-only" in args
+args = [a for a in args if a != "--design-only"]
 PDIR, designs = None, []
 for a in args:
     if a.lower().endswith(".json"):
@@ -31,9 +43,13 @@ for a in args:
     else:
         print(USAGE, file=sys.stderr)
         sys.exit(2)
+if DESIGN_ONLY and (PDIR is not None or not designs):
+    print(USAGE, file=sys.stderr)
+    sys.exit(2)
 
 # --- A. environment ---------------------------------------------------------------------------
-check("python", sys.version_info >= (3, 8), "%d.%d.%d" % sys.version_info[:3])
+if not DESIGN_ONLY:
+    check("python", sys.version_info >= (3, 8), "%d.%d.%d" % sys.version_info[:3])
 
 def find_blender():
     exe = os.environ.get("BLENDER")
@@ -51,12 +67,14 @@ def find_blender():
     exe = shutil.which("blender")
     return exe, "on PATH" if exe else "no blender on PATH; set BLENDER=<path to blender>"
 
-exe, how = find_blender()
-if exe and not os.path.isfile(exe):
-    check("blender executable", False, "%s (%s) does not exist" % (exe, how))
-    exe = None
-else:
-    check("blender executable", bool(exe), "%s (%s)" % (exe, how) if exe else how)
+exe = None
+if not DESIGN_ONLY:
+    exe, how = find_blender()
+    if exe and not os.path.isfile(exe):
+        check("blender executable", False, "%s (%s) does not exist" % (exe, how))
+        exe = None
+    else:
+        check("blender executable", bool(exe), "%s (%s)" % (exe, how) if exe else how)
 
 # Runs inside Blender. Every probe guards itself, the text avoids characters cmd.exe treats specially, and
 # exec(repr(...)) turns it into the single line Blender receives on its command line.
@@ -226,6 +244,9 @@ if PDIR and not designs:
 SAFE = re.compile(r"[A-Za-z0-9_-]+")
 MODES = ("balanced", "uphill")
 NEED = {"house": ("w_ft", "d_ft", "wall_h", "roof_pitch"), "terrace": ("w_m", "d_m"), "drive": ("width_m",)}
+POSITIVE = {"house": ("w_ft", "d_ft", "wall_h", "roof_pitch"), "terrace": ("w_m", "d_m"), "drive": ("width_m",)}
+VEG_DEFAULTS = {"per_ha": 40, "seed": 1, "min_h": 4.0, "max_h": 11.0, "clear_m": 2.0}
+design_names = {}
 for dpath in designs:
     name = "design %s" % os.path.basename(dpath)
     try:
@@ -237,8 +258,15 @@ for dpath in designs:
     if not isinstance(d, dict):
         bad.append("not a JSON object")
         d = {}
-    if not SAFE.fullmatch(str(d.get("name", ""))):
+    dname = d.get("name")
+    if not (isinstance(dname, str) and SAFE.fullmatch(dname)):
         bad.append("name must be letters, digits, _ or - (it names the output files)")
+    else:
+        name_key = dname.casefold()
+        if name_key in design_names:
+            bad.append("name duplicates %s (output files would collide)" % design_names[name_key])
+        else:
+            design_names[name_key] = os.path.basename(dpath)
     frame = d.get("frame")
     if not (isinstance(frame, dict) and num(frame.get("u_bearing_deg"))):
         bad.append("frame.u_bearing_deg must be a number")
@@ -257,30 +285,37 @@ for dpath in designs:
                     bad.append("vegetation.%s must be a number >= 0" % k)
             if "seed" in vg and not (isinstance(vg["seed"], int) and not isinstance(vg["seed"], bool) and vg["seed"] >= 0):
                 bad.append("vegetation.seed must be a whole number >= 0")
-            if num(vg.get("min_h")) and num(vg.get("max_h")) and vg["min_h"] > vg["max_h"]:
+            effective_vg = dict(VEG_DEFAULTS, **vg)
+            if num(effective_vg.get("min_h")) and num(effective_vg.get("max_h")) and effective_vg["min_h"] > effective_vg["max_h"]:
                 bad.append("vegetation.min_h is larger than max_h")
     els = d.get("elements")
     if not (isinstance(els, list) and els):
         bad.append("elements must be a non-empty list")
         els = []
+    elif not any(isinstance(el, dict) and el.get("kind") in ("house", "terrace") for el in els):
+        bad.append("elements must include at least one house or terrace")
     seen = set()
     for i, el in enumerate(els):
         if not isinstance(el, dict):
             bad.append("element %d is not an object" % i)
             continue
-        eid = str(el.get("id", ""))
-        tag = eid or "element %d" % i
-        if not SAFE.fullmatch(eid):
+        eid = el.get("id")
+        tag = eid if isinstance(eid, str) and eid else "element %d" % i
+        if not (isinstance(eid, str) and SAFE.fullmatch(eid)):
             bad.append("%s: id must be letters, digits, _ or -" % tag)
         elif eid in seen:
             bad.append("%s: duplicate id" % tag)
-        seen.add(eid)
+        if isinstance(eid, str):
+            seen.add(eid)
         kind = el.get("kind")
         if kind not in NEED:
             bad.append("%s: kind must be house, terrace or drive" % tag)
         for k in (() if kind == "drive" else ("u", "v")) + NEED.get(kind, ()):
             if not num(el.get(k)):
                 bad.append("%s: %s must be a number" % (tag, k))
+        for k in POSITIVE.get(kind, ()):
+            if num(el.get(k)) and el[k] <= 0:
+                bad.append("%s: %s must be positive" % (tag, k))
         if "rot_deg" in el and not num(el["rot_deg"]):
             bad.append("%s: rot_deg must be a number" % tag)
         if "floor_mode" in el and el["floor_mode"] not in MODES:
@@ -292,8 +327,11 @@ for dpath in designs:
                 bad.append("%s: points must be a list of at least two [u, v] pairs" % tag)
             elif any(q == r for q, r in zip(pts, pts[1:])):
                 bad.append("%s: consecutive points repeat" % tag)
-            if num(el.get("width_m")) and el["width_m"] <= 0:
-                bad.append("%s: width_m must be positive" % tag)
+            elif num(el.get("width_m")) and el["width_m"] > 0:
+                try:
+                    checked_offsets([tuple(q) for q in pts], el.get("width_m"))
+                except (TypeError, ValueError) as e:
+                    bad.append("%s: %s" % (tag, e))
             if "max_grade_pct" in el and not (num(el["max_grade_pct"]) and el["max_grade_pct"] > 0):
                 bad.append("%s: max_grade_pct must be a positive number" % tag)
         if kind == "house" and "steps" in el:

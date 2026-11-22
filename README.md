@@ -25,7 +25,8 @@ re-run after you edit a config.
 
 ## What you get per parcel
 Everything lands in subfolders of the parcel folder. `<design>` is the `name` field of a design
-JSON.
+JSON. `doctor.py` rejects duplicate design names case-insensitively when it checks multiple files,
+because those names would target the same outputs.
 
 | path | contents |
 | --- | --- |
@@ -195,6 +196,15 @@ are the safety net there, and
 [docs/roadmap.md](docs/roadmap.md#develop-anywhere-verify-on-a-blender-machine) says how a change
 gets verified on a Blender machine. The active findings and exact handoff contract are in
 [docs/development-handoff.md](docs/development-handoff.md).
+
+To validate one or more design files without probing Blender or requiring a parcel folder, run:
+
+```bat
+python templates\doctor.py --design-only examples\design.example.json
+```
+
+This mode exits 0 when every design passes, 1 when validation fails, and 2 for invalid usage. It
+also performs cross-file checks such as duplicate output names.
 
 ## Conventions and caveats
 - Real meters, no rescaling. Z is absolute elevation (NAVD88 meters for 3DEP).
