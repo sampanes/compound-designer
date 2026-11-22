@@ -13,6 +13,7 @@ LAT0, LON0 = 39.5, -105.5
 LOC = g.Local(LON0, LAT0)
 PARCELS = "https://gis.example.com/arcgis/rest/services/Example_Parcels/FeatureServer"
 OLD = "https://gis.example.com/arcgis/rest/services/Example_Parcels_Copy/FeatureServer"
+PARTIAL = "https://gis.example.com/arcgis/rest/services/Example_Parcels_Partial/FeatureServer"
 ZONING = "https://gis.example.com/arcgis/rest/services/Example_Zoning/FeatureServer"
 VACANT_URL = "https://www.zillow.com/homedetails/000-Quiet-Hawk-Trl-%23--Anytown-CO-80000/1_zpid/?utm_source=txt"
 
@@ -79,7 +80,7 @@ class Services:
                 return {"results": [{"title": "Zoning - Example County", "owner": "examplegis", "url": ZONING}]}
             return {"results": [{"title": "Example County Parcels", "owner": "examplegis", "url": PARCELS},
                                 {"title": "Parcels copy", "owner": "someone", "url": OLD}]}
-        for svc in (PARCELS, OLD):
+        for svc in (PARCELS, OLD, PARTIAL):
             if base == svc:
                 return {"layers": [{"id": 0, "geometryType": "esriGeometryPolygon"}]}
             if base == svc + "/0":
@@ -89,7 +90,7 @@ class Services:
                                    {"name": "SITUS_ADDR", "type": "esriFieldTypeString"},
                                    {"name": "OWNER_NAME", "type": "esriFieldTypeString"}]}
             if base == svc + "/0/query":
-                return self.parcels(q, svc == OLD)
+                return self.parcels(q, svc)
         if base == ZONING:
             return {"layers": [{"id": 0, "geometryType": "esriGeometryPolygon"}, {"id": 1, "geometryType": "esriGeometryPolygon"}]}
         if base in (ZONING + "/0", ZONING + "/1"):
@@ -118,9 +119,10 @@ class Services:
             return {"features": [{"attributes": {"NAME": "Quiet Hawk Trl", "MTFCC": "S1400"}, "geometry": {"paths": [road]}}]}
         raise AssertionError("unexpected request " + base)
 
-    def parcels(self, q, partial_copy):
+    def parcels(self, q, svc):
         where = q.get("where", "")
-        lots = [] if partial_copy else LOTS
+        # the copy is empty; the partial copy has the street but is missing number 12
+        lots = [] if svc == OLD else [l for l in LOTS if l["APN"] != "123-45-012"] if svc == PARTIAL else LOTS
         if q.get("resultRecordCount") == "1" and where == "1=1":
             return {"features": [{"attributes": {"APN": "123-45-011", "SITUS_ADDR": "11 QUIET HAWK TRL"}}]}
         if "LIKE '%QUIET HAWK%'" in where:
@@ -189,6 +191,16 @@ class Scout(unittest.TestCase):
         rc, out, _ = self.run_main("listing", VACANT_URL, "--acres", "3")
         self.assertEqual(rc, 0)
         self.assertIn("[LAYER] %s/0" % PARCELS, out)
+
+    def test_street_number_missing_from_the_top_layer_falls_back_to_one_that_has_it(self):
+        cache = {"layer|parcels|08999": {"url": PARTIAL + "/0", "id_field": "APN", "addr_field": "SITUS_ADDR", "score": 9,
+                                          "alternates": [{"url": PARCELS + "/0", "id_field": "APN", "addr_field": "SITUS_ADDR", "score": 8}]}}
+        with open(self.cache, "w", encoding="utf-8") as f:
+            json.dump(cache, f)
+        rc, out, _ = self.run_main("listing", "12 Quiet Hawk Trl, Anytown, CO 80000")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("[LAYER] %s/0" % PARCELS, out)
+        self.assertIn("[MATCH] found by address", out)
 
     def test_no_acres_lists_street_candidates(self):
         rc, out, _ = self.run_main("listing", VACANT_URL)

@@ -13,6 +13,8 @@ SUFFIXES = {"AVE", "AVENUE", "BLVD", "BOULEVARD", "CIR", "CIRCLE", "CT", "COURT"
             "HWY", "HIGHWAY", "LN", "LANE", "LOOP", "PASS", "PATH", "PKWY", "PARKWAY", "PL", "PLACE", "PT", "POINT",
             "RD", "ROAD", "RUN", "SQ", "ST", "STREET", "TER", "TERRACE", "TRL", "TRAIL", "WAY", "XING", "ROW"}
 DIRECTIONALS = {"N", "S", "E", "W", "NE", "NW", "SE", "SW", "NORTH", "SOUTH", "EAST", "WEST"}
+ROUTE_WORDS = {"HWY", "HIGHWAY", "ROUTE", "RTE", "RD", "ROAD", "SR", "CR", "FM", "US"}
+ROUTE_NUMBER = re.compile(r"\d+[A-Za-z]?")
 UNIT_WORDS = {"APT", "UNIT", "LOT", "SPC", "SPACE", "STE", "SUITE", "BLDG", "TRLR"}
 STATES = {"AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS",
           "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC",
@@ -50,8 +52,17 @@ def _split_tokens(tokens):
     if clean and re.fullmatch(r"\d+[A-Za-z]?(-\d+)?", clean[0]):
         out["street_number"] = clean.pop(0)
     # the first suffix after at least one name word ends the street: "Court St" and "St Andrews Dr" keep
-    # their leading word, and a city like "Port St Lucie" is not mistaken for part of the street
-    last = next((k for k, t in enumerate(clean) if k >= 1 and t.upper().rstrip(".") in SUFFIXES), None)
+    # their leading word, and a city like "Port St Lucie" is not mistaken for part of the street. A route
+    # word followed by a number ends it after the number: "County Road 5", "Highway 89A", "State Route 260".
+    last = None
+    for k, t in enumerate(clean):
+        u = t.upper().rstrip(".")
+        if u in ROUTE_WORDS and k + 1 < len(clean) and ROUTE_NUMBER.fullmatch(clean[k + 1]):
+            last = k + 1
+            break
+        if k >= 1 and u in SUFFIXES:
+            last = k
+            break
     if last is not None and last + 1 < len(clean) and clean[last + 1].upper() in DIRECTIONALS:
         last += 1  # "Main St N"
     if last is None:

@@ -1,0 +1,787 @@
+{
+ "_about": "Shared test cases for compound-designer's templates/scout_geo.py and rural-scout's js/listing.js and js/geo.js. Inputs are synthetic. Expectations come from scout_geo.py; keep both repos' copies identical.",
+ "parse_listing": [
+  {
+   "input": "https://www.zillow.com/homedetails/000-QUIET-HAWK-Trl-%23--Anytown-CO-80000/123_zpid/?utm_campaign=share&utm_source=txt",
+   "expect": {
+    "street_number": null,
+    "street": "QUIET HAWK Trl",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": true,
+    "url": "https://www.zillow.com/homedetails/000-QUIET-HAWK-Trl-%23--Anytown-CO-80000/123_zpid/",
+    "source": "zillow",
+    "listing_id": "123",
+    "query": "QUIET HAWK Trl, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "https://www.zillow.com/homedetails/0000-Quiet-Hawk-Rd-%2312B-Anytown-CO-80000/9_zpid/",
+   "expect": {
+    "street_number": null,
+    "street": "Quiet Hawk Rd",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "12B",
+    "vacant": true,
+    "url": "https://www.zillow.com/homedetails/0000-Quiet-Hawk-Rd-%2312B-Anytown-CO-80000/9_zpid/",
+    "source": "zillow",
+    "listing_id": "9",
+    "query": "Quiet Hawk Rd, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "https://www.zillow.com/homedetails/42-Elm-St-APT-3-Port-St-Lucie-FL-34952/77_zpid/",
+   "expect": {
+    "street_number": "42",
+    "street": "Elm St",
+    "city": "Port St Lucie",
+    "state": "FL",
+    "zip": "34952",
+    "unit": "3",
+    "vacant": false,
+    "url": "https://www.zillow.com/homedetails/42-Elm-St-APT-3-Port-St-Lucie-FL-34952/77_zpid/",
+    "source": "zillow",
+    "listing_id": "77",
+    "query": "42 Elm St, Port St Lucie, FL 34952"
+   }
+  },
+  {
+   "input": "https://www.zillow.com/homedetails/5-St-Andrews-Dr-Anytown-CO-80000/1_zpid/",
+   "expect": {
+    "street_number": "5",
+    "street": "St Andrews Dr",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": false,
+    "url": "https://www.zillow.com/homedetails/5-St-Andrews-Dr-Anytown-CO-80000/1_zpid/",
+    "source": "zillow",
+    "listing_id": "1",
+    "query": "5 St Andrews Dr, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "https://www.zillow.com/homedetails/9-Main-St-N-Anytown-CO-80000/2_zpid/",
+   "expect": {
+    "street_number": "9",
+    "street": "Main St N",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": false,
+    "url": "https://www.zillow.com/homedetails/9-Main-St-N-Anytown-CO-80000/2_zpid/",
+    "source": "zillow",
+    "listing_id": "2",
+    "query": "9 Main St N, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "https://www.zillow.com/homedetails/Lot-7-Quiet-Hawk-Trl-Anytown-CO-80000/3_zpid/",
+   "expect": {
+    "street_number": null,
+    "street": "Quiet Hawk Trl",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "7",
+    "vacant": true,
+    "url": "https://www.zillow.com/homedetails/Lot-7-Quiet-Hawk-Trl-Anytown-CO-80000/3_zpid/",
+    "source": "zillow",
+    "listing_id": "3",
+    "query": "Quiet Hawk Trl, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "https://www.redfin.com/CO/Anytown/0-Quiet-Hawk-Trl-80000/home/555?share=1",
+   "expect": {
+    "street_number": null,
+    "street": "Quiet Hawk Trl",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": true,
+    "url": "https://www.redfin.com/CO/Anytown/0-Quiet-Hawk-Trl-80000/home/555",
+    "source": "redfin",
+    "listing_id": "555",
+    "query": "Quiet Hawk Trl, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "https://www.redfin.com/CO/Any-Town/12-Quiet-Hawk-Trl-80000/home/556",
+   "expect": {
+    "street_number": "12",
+    "street": "Quiet Hawk Trl",
+    "city": "Any Town",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": false,
+    "url": "https://www.redfin.com/CO/Any-Town/12-Quiet-Hawk-Trl-80000/home/556",
+    "source": "redfin",
+    "listing_id": "556",
+    "query": "12 Quiet Hawk Trl, Any Town, CO 80000"
+   }
+  },
+  {
+   "input": "https://www.realtor.com/realestateandhomes-detail/7-Quiet-Hawk-Trl_Any-Town_CO_80000_M1-2",
+   "expect": {
+    "street_number": "7",
+    "street": "Quiet Hawk Trl",
+    "city": "Any Town",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": false,
+    "url": "https://www.realtor.com/realestateandhomes-detail/7-Quiet-Hawk-Trl_Any-Town_CO_80000_M1-2",
+    "source": "realtor",
+    "listing_id": "M1-2",
+    "query": "7 Quiet Hawk Trl, Any Town, CO 80000"
+   }
+  },
+  {
+   "input": "https://www.realtor.com/realestateandhomes-detail/0-Quiet-Hawk-Trl_Anytown_CO_80000_M3-4#photos",
+   "expect": {
+    "street_number": null,
+    "street": "Quiet Hawk Trl",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": true,
+    "url": "https://www.realtor.com/realestateandhomes-detail/0-Quiet-Hawk-Trl_Anytown_CO_80000_M3-4",
+    "source": "realtor",
+    "listing_id": "M3-4",
+    "query": "Quiet Hawk Trl, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "https://listings.example.com/homes/123-Quiet-Hawk-Trl-Anytown-CO-80000",
+   "expect": {
+    "street_number": "123",
+    "street": "Quiet Hawk Trl",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": false,
+    "url": "https://listings.example.com/homes/123-Quiet-Hawk-Trl-Anytown-CO-80000",
+    "source": "listings.example.com",
+    "listing_id": "",
+    "query": "123 Quiet Hawk Trl, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "000 Quiet Hawk Trl #-, Anytown, CO 80000",
+   "expect": {
+    "street_number": null,
+    "street": "Quiet Hawk Trl",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": true,
+    "url": "",
+    "source": "text",
+    "listing_id": "",
+    "query": "Quiet Hawk Trl, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "12 Quiet Hawk Trl Anytown CO",
+   "expect": {
+    "street_number": "12",
+    "street": "Quiet Hawk Trl",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "",
+    "unit": "",
+    "vacant": false,
+    "url": "",
+    "source": "text",
+    "listing_id": "",
+    "query": "12 Quiet Hawk Trl, Anytown, CO"
+   }
+  },
+  {
+   "input": "12 Quiet Hawk Trl Unit 4, Anytown, CO 80000-1234",
+   "expect": {
+    "street_number": "12",
+    "street": "Quiet Hawk Trl",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "4",
+    "vacant": false,
+    "url": "",
+    "source": "text",
+    "listing_id": "",
+    "query": "12 Quiet Hawk Trl, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "Quiet Hawk Trl, Anytown, CO",
+   "expect": {
+    "street_number": null,
+    "street": "Quiet Hawk Trl",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "",
+    "unit": "",
+    "vacant": true,
+    "url": "",
+    "source": "text",
+    "listing_id": "",
+    "query": "Quiet Hawk Trl, Anytown, CO"
+   }
+  },
+  {
+   "input": "  0 County Road 5, Anytown, CO 80000  ",
+   "expect": {
+    "street_number": null,
+    "street": "County Road 5",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": true,
+    "url": "",
+    "source": "text",
+    "listing_id": "",
+    "query": "County Road 5, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "https://www.zillow.com/homedetails/0-County-Road-5-Anytown-CO-80000/4_zpid/",
+   "expect": {
+    "street_number": null,
+    "street": "County Road 5",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "80000",
+    "unit": "",
+    "vacant": true,
+    "url": "https://www.zillow.com/homedetails/0-County-Road-5-Anytown-CO-80000/4_zpid/",
+    "source": "zillow",
+    "listing_id": "4",
+    "query": "County Road 5, Anytown, CO 80000"
+   }
+  },
+  {
+   "input": "https://www.zillow.com/homedetails/000-N-State-Route-260-Any-Town-AZ-85000/5_zpid/",
+   "expect": {
+    "street_number": null,
+    "street": "N State Route 260",
+    "city": "Any Town",
+    "state": "AZ",
+    "zip": "85000",
+    "unit": "",
+    "vacant": true,
+    "url": "https://www.zillow.com/homedetails/000-N-State-Route-260-Any-Town-AZ-85000/5_zpid/",
+    "source": "zillow",
+    "listing_id": "5",
+    "query": "N State Route 260, Any Town, AZ 85000"
+   }
+  },
+  {
+   "input": "12 Highway 89A, Anytown, AZ 85000",
+   "expect": {
+    "street_number": "12",
+    "street": "Highway 89A",
+    "city": "Anytown",
+    "state": "AZ",
+    "zip": "85000",
+    "unit": "",
+    "vacant": false,
+    "url": "",
+    "source": "text",
+    "listing_id": "",
+    "query": "12 Highway 89A, Anytown, AZ 85000"
+   }
+  },
+  {
+   "input": "5 US Highway 191 Anytown AZ",
+   "expect": {
+    "street_number": "5",
+    "street": "US Highway 191",
+    "city": "Anytown",
+    "state": "AZ",
+    "zip": "",
+    "unit": "",
+    "vacant": false,
+    "url": "",
+    "source": "text",
+    "listing_id": "",
+    "query": "5 US Highway 191, Anytown, AZ"
+   }
+  },
+  {
+   "input": "7 Rd 12 Anytown CO",
+   "expect": {
+    "street_number": "7",
+    "street": "Rd 12",
+    "city": "Anytown",
+    "state": "CO",
+    "zip": "",
+    "unit": "",
+    "vacant": false,
+    "url": "",
+    "source": "text",
+    "listing_id": "",
+    "query": "7 Rd 12, Anytown, CO"
+   }
+  }
+ ],
+ "same_street": [
+  {
+   "addr": "1234 W QUIET HAWK TRAIL",
+   "street": "Quiet Hawk Trl",
+   "expect": true
+  },
+  {
+   "addr": "1234 W QUIET HAWK RD",
+   "street": "Quiet Hawk Trl",
+   "expect": false
+  },
+  {
+   "addr": "1234 QUIET HAWK",
+   "street": "Quiet Hawk Trl",
+   "expect": true
+  },
+  {
+   "addr": "12 N QUIET HAWK DR.",
+   "street": "N Quiet Hawk Drive",
+   "expect": true
+  },
+  {
+   "addr": "12 ELM ST",
+   "street": "Quiet Hawk Trl",
+   "expect": false
+  },
+  {
+   "addr": "5 ST ANDREWS DR",
+   "street": "St Andrews Dr",
+   "expect": true
+  }
+ ],
+ "street_core": [
+  {
+   "street": "N Quiet Hawk Drive",
+   "expect": "QUIET HAWK",
+   "suffix": "DR"
+  },
+  {
+   "street": "QUIET HAWK DR",
+   "expect": "QUIET HAWK",
+   "suffix": "DR"
+  },
+  {
+   "street": "Main St N",
+   "expect": "MAIN",
+   "suffix": "ST"
+  },
+  {
+   "street": "St Andrews Dr",
+   "expect": "ST ANDREWS",
+   "suffix": "DR"
+  },
+  {
+   "street": "N",
+   "expect": "",
+   "suffix": ""
+  },
+  {
+   "street": "County Road 5",
+   "expect": "COUNTY ROAD 5",
+   "suffix": ""
+  }
+ ],
+ "apn_tail_match": [
+  {
+   "id": "123-45-067",
+   "number": "67",
+   "expect": true
+  },
+  {
+   "id": "12345067",
+   "number": "067",
+   "expect": true
+  },
+  {
+   "id": "123-45-067",
+   "number": "7",
+   "expect": false
+  },
+  {
+   "id": "123-45-067",
+   "number": "68",
+   "expect": false
+  },
+  {
+   "id": "12-34A",
+   "number": "34",
+   "expect": true
+  },
+  {
+   "id": "123-45-067",
+   "number": "",
+   "expect": false
+  }
+ ],
+ "apn_variants": [
+  {
+   "apn": "123-45-678a",
+   "variants": [
+    "123-45-678a",
+    "123-45-678A",
+    "12345678A"
+   ],
+   "like": "%123%45%678A%"
+  },
+  {
+   "apn": " 12 345 678 ",
+   "variants": [
+    "12 345 678",
+    "12345678"
+   ],
+   "like": "%12%345%678%"
+  },
+  {
+   "apn": "R0012.34",
+   "variants": [
+    "R0012.34",
+    "R001234"
+   ],
+   "like": "%R0012%34%"
+  }
+ ],
+ "flags": [
+  {
+   "report": {
+    "flood": {
+     "status": "ok",
+     "pct_sfha": 0,
+     "pct_floodway": 0
+    },
+    "terrain": {
+     "pct_area_grade_under_15": 80,
+     "grade_median_pct": 8
+    },
+    "roads": {
+     "status": "ok",
+     "nearest_m": 5
+    },
+    "streams": {
+     "status": "ok",
+     "nearest_m": null
+    },
+    "lidar": [
+     "XX_Example_2020"
+    ]
+   },
+   "expect": []
+  },
+  {
+   "report": {
+    "flood": {
+     "status": "ok",
+     "pct_sfha": 40,
+     "pct_floodway": 12
+    },
+    "terrain": {
+     "pct_area_grade_under_15": 60,
+     "grade_median_pct": 11
+    },
+    "roads": {
+     "status": "ok",
+     "nearest_m": 220
+    },
+    "streams": {
+     "status": "ok",
+     "nearest_m": 0,
+     "nearest_name": "Willow Creek",
+     "nearest_kind": "perennial stream"
+    },
+    "lidar": [
+     "XX_Example_2020"
+    ]
+   },
+   "expect": [
+    "12% in a regulatory floodway",
+    "40% in the 1% annual chance floodplain (SFHA)",
+    "no mapped road within 30 m (access may be by easement or unmapped road)",
+    "Willow Creek perennial stream crosses the parcel"
+   ]
+  },
+  {
+   "report": {
+    "flood": {
+     "status": "unverified"
+    },
+    "terrain": {
+     "pct_area_grade_under_15": 5,
+     "grade_median_pct": 45
+    },
+    "roads": {
+     "status": "unverified"
+    },
+    "streams": {
+     "status": "ok",
+     "nearest_m": 20,
+     "nearest_name": "",
+     "nearest_kind": ""
+    },
+    "lidar": []
+   },
+   "expect": [
+    "flood zone unverified",
+    "under 10% of the lot is below a 15% grade",
+    "a stream within 20 m",
+    "no 1 m lidar"
+   ]
+  },
+  {
+   "report": {
+    "flood": {
+     "status": "ok",
+     "pct_sfha": 0,
+     "pct_floodway": 0
+    },
+    "terrain": {
+     "pct_area_grade_under_15": 30,
+     "grade_median_pct": 31
+    },
+    "roads": {
+     "status": "ok",
+     "nearest_m": null
+    },
+    "streams": {
+     "status": "unverified"
+    },
+    "lidar": null
+   },
+   "expect": [
+    "steep: median grade 31%",
+    "no mapped road within 30 m (access may be by easement or unmapped road)"
+   ]
+  },
+  {
+   "report": {
+    "flood": {
+     "status": "ok",
+     "pct_sfha": 0,
+     "pct_floodway": 0
+    },
+    "terrain": null,
+    "roads": {
+     "status": "ok",
+     "nearest_m": 30
+    },
+    "streams": {
+     "status": "ok",
+     "nearest_m": 31
+    }
+   },
+   "expect": [
+    "no elevation samples"
+   ]
+  }
+ ],
+ "rank_candidates": [
+  {
+   "cands": [
+    {
+     "id": "123-45-068",
+     "acres": 2.2,
+     "dist_m": 50
+    },
+    {
+     "id": "123-45-067",
+     "acres": 2.3,
+     "dist_m": 400
+    },
+    {
+     "id": "123-45-069",
+     "acres": 4.0,
+     "dist_m": 10
+    }
+   ],
+   "acres": 2.3,
+   "number": "67",
+   "expect": [
+    "123-45-067",
+    "123-45-068"
+   ]
+  },
+  {
+   "cands": [
+    {
+     "id": "A",
+     "acres": 5.0,
+     "dist_m": 300
+    },
+    {
+     "id": "B",
+     "acres": 5.1,
+     "dist_m": 100
+    },
+    {
+     "id": "C",
+     "acres": 4.9,
+     "dist_m": 50
+    }
+   ],
+   "acres": 5.0,
+   "number": null,
+   "expect": [
+    "A",
+    "C",
+    "B"
+   ]
+  },
+  {
+   "cands": [
+    {
+     "id": "A",
+     "acres": 5.0,
+     "dist_m": 300
+    },
+    {
+     "id": "B",
+     "acres": 9.0,
+     "dist_m": 100
+    }
+   ],
+   "acres": null,
+   "number": null,
+   "expect": [
+    "B",
+    "A"
+   ]
+  }
+ ],
+ "guess_fields": [
+  {
+   "fields": [
+    {
+     "name": "OBJECTID",
+     "type": "esriFieldTypeOID"
+    },
+    {
+     "name": "PARCELID",
+     "type": "esriFieldTypeString"
+    },
+    {
+     "name": "APN",
+     "type": "esriFieldTypeString"
+    },
+    {
+     "name": "SITUS_ADDR",
+     "type": "esriFieldTypeString"
+    },
+    {
+     "name": "OWNER_ADDR",
+     "type": "esriFieldTypeString"
+    }
+   ],
+   "sample": {
+    "PARCELID": "12345678",
+    "APN": "123-45-678"
+   },
+   "expect": [
+    "APN",
+    "SITUS_ADDR"
+   ]
+  },
+  {
+   "fields": [
+    {
+     "name": "PIN",
+     "type": "esriFieldTypeString"
+    },
+    {
+     "name": "MAIL_ADDRESS",
+     "type": "esriFieldTypeString"
+    },
+    {
+     "name": "ADDRESS",
+     "type": "esriFieldTypeString"
+    }
+   ],
+   "sample": null,
+   "expect": [
+    "PIN",
+    "ADDRESS"
+   ]
+  },
+  {
+   "fields": [
+    {
+     "name": "OBJECTID",
+     "type": "esriFieldTypeOID"
+    },
+    {
+     "name": "NAME",
+     "type": "esriFieldTypeString"
+    }
+   ],
+   "sample": null,
+   "expect": [
+    null,
+    null
+   ]
+  }
+ ],
+ "rank_layer": [
+  {
+   "args": [
+    "Anytown County Parcels",
+    "anytown_gis",
+    "Anytown County",
+    true,
+    true,
+    "parcels"
+   ],
+   "expect": 10
+  },
+  {
+   "args": [
+    "Parcels Historic 2005 to 2010",
+    "anytown_gis",
+    "Anytown County",
+    true,
+    true,
+    "parcels"
+   ],
+   "expect": 2
+  },
+  {
+   "args": [
+    "Road Centerlines",
+    "someone",
+    "Anytown County",
+    false,
+    false,
+    "parcels"
+   ],
+   "expect": -4
+  },
+  {
+   "args": [
+    "Anytown Zoning Districts",
+    "anytown_gis",
+    "Anytown County",
+    true,
+    true,
+    "zoning"
+   ],
+   "expect": 10
+  }
+ ]
+}

@@ -287,6 +287,12 @@ def street_hits(layer, street):
     return same or feats
 
 
+def exact_number(feats, layer, num):
+    """The features whose situs address starts with the street number."""
+    addr = layer.get("addr_field")
+    return [f for f in feats if (f["attributes"].get(addr) or "").strip().upper().split(" ")[:1] == [num]]
+
+
 def locate(cache, parsed, acres=None, apn=None, layer=None, discover=True, radius_m=1500):
     """Find the county, its parcel layer, and the parcel for a parsed listing. Returns a dict with
     county, layer, status ('found', 'ambiguous', 'not_found') and candidates (best first)."""
@@ -306,7 +312,11 @@ def locate(cache, parsed, acres=None, apn=None, layer=None, discover=True, radiu
     # look for the street in the parcel layer of every county near the point and keep the one that has it.
     tried = []
     street_feats = []
+    num = (parsed.get("street_number") or "").upper()
     if layer is None:
+        # A street name can repeat across counties, so with a street number, a county whose parcels have
+        # the street but not the number is only a fallback.
+        fallback = None
         for county in counties_near(cache, *pt):
             lay = find_layer(cache, county, discover=discover)
             tried.append(county[0] + ("" if lay and lay.get("id_field") else " (no parcel layer)"))
@@ -321,11 +331,15 @@ def locate(cache, parsed, acres=None, apn=None, layer=None, discover=True, radiu
                 continue
             for alt in [lay] + [a for a in lay.get("alternates", []) if a.get("id_field")]:
                 hits = street_hits(alt, parsed.get("street", ""))
-                if hits:
+                if hits and num and not exact_number(hits, alt, num):
+                    fallback = fallback or (alt, list(county), hits)
+                elif hits:
                     layer, out["county"], street_feats = alt, list(county), hits
                     break
             if street_feats:
                 break
+        if not street_feats and fallback:
+            layer, out["county"], street_feats = fallback
         if layer is None:
             raise ScoutError("no parcel layer found for %s; pass --layer and --id-field, or pin one in the cache"
                              % ", ".join(tried))
@@ -341,11 +355,8 @@ def locate(cache, parsed, acres=None, apn=None, layer=None, discover=True, radiu
         out["status"] = "found" if len(feats) == 1 else ("ambiguous" if feats else "not_found")
         out["matched_by"] = "apn"
         return out
-    addr = layer.get("addr_field")
-    if parsed.get("street_number") and street_feats:
-        num = parsed["street_number"].upper()
-        exact = [f for f in street_feats
-                 if (f["attributes"].get(addr) or "").strip().upper().split(" ")[:1] == [num]]
+    if num and street_feats:
+        exact = exact_number(street_feats, layer, num)
         if exact:
             out["candidates"] = [candidate(f, layer, pt) for f in exact]
             out["status"] = "found" if len(exact) == 1 else "ambiguous"

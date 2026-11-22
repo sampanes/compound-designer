@@ -33,7 +33,8 @@ makes no discovery calls. To pin a layer by hand, add an entry keyed
 
 1. **Parse the listing.** Tracking parameters are dropped. Unit markers (`#`, `%23`, `#-`,
    `APT 3`) are removed. A street number that is missing or all zeros (`0`, `000`, `0000`) means
-   vacant land with no assigned address: the number is dropped rather than geocoded.
+   vacant land with no assigned address: the number is dropped rather than geocoded. A route word
+   followed by a number keeps the number (`County Road 5`, `Highway 89A`, `State Route 260`).
 2. **Place it.** OpenStreetMap Nominatim geocodes the street, falling back to the city, then the
    ZIP. Rural streets are often missing from OSM, so the city fallback is common.
 3. **Find the county, plural.** The Census geocoder gives the county at the point and at eight
@@ -47,7 +48,9 @@ makes no discovery calls. To pin a layer by hand, add an entry keyed
    reliable map of rural streets. The search is `LIKE '%<street core>%'`: suffixes and directionals
    are stripped because sources disagree ("Drive" vs "Rd"), then the suffix narrows the hits again
    when it can. The first county and layer whose data has the street wins. If the top layer lacks it,
-   the runners-up are tried, because copies of county parcels are often partial or stale.
+   the runners-up are tried, because copies of county parcels are often partial or stale. With a real
+   street number, a county or layer that has the street but not the number is only a fallback: street
+   names repeat across a county line, so the search keeps going for one that has the number.
 6. **Pick the parcel.**
    - A real street number matches the situs address exactly.
    - Vacant land is matched by acreage (within 5%) among parcels within 1.5 km of that street's
@@ -93,6 +96,24 @@ fields.
   check for an access easement, not that the lot is landlocked.
 - **Grade from a sampled grid agrees with the full pipeline.** On a steep test lot, the scout's
   median grade matched `build_site.py`'s 5 m smoothed grade to the tenth of a percent.
+
+## The web version and the shared cases
+
+[rural-scout](https://github.com/sampanes/rural-scout) runs the same lookup in the browser (its
+`js/listing.js`, `js/geo.js`, and `js/scout.js` port `scout_geo.py` and `scout_parcel.py`; the county
+comes from the FCC area API, which allows browser calls), with a satellite map, a batch table, and the
+drive time to town. A found parcel's card shows the `init` command for this repo.
+
+`tests/fixtures/scout_cases.json` holds synthetic cases for parsing, street and APN matching, flags,
+and candidate ranking, with expectations computed by `scout_geo.py`. Both repos test against the same
+file, and rural-scout's CI fails when its copy differs from this one. After changing a rule here:
+
+```
+python tests\fixtures\make_scout_cases.py
+python -m unittest discover -s tests
+```
+
+then copy the regenerated file to rural-scout's `tests\fixtures\` and port the rule to its `js/`.
 
 ## Triage, then design
 
